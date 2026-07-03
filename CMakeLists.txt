@@ -74,4 +74,12 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   add_executable(strings_test test/test.cc)
   target_link_libraries(strings_test PRIVATE strings)
   add_test(NAME strings COMMAND strings_test)
+
+  # A realistic usage example that mirrors Xapiand's call sites. It self-checks
+  # and is ALSO registered as a ctest test, so it catches regressions in the
+  # formatting, joining/splitting, case-folding, predicate, replacement, and
+  # humanizer behavior Xapiand relies on.
+  add_executable(strings_usage examples/usage.cc)
+  target_link_libraries(strings_usage PRIVATE strings)
+  add_test(NAME strings_usage COMMAND strings_usage)
 endif()
