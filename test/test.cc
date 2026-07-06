@@ -35,9 +35,12 @@ static void test_format() {
 	// A static_string argument must format via its string_view value. This is the
 	// regression guard for libc++ builds whose <format> lacks custom-formatter
 	// support (macOS 14 / FreeBSD 14): format() normalizes static_string to a
-	// std::string_view so it stays formattable there. Mix it with other arg types.
+	// std::string_view so it stays formattable there. Cover both a const lvalue
+	// and a non-const rvalue (a concatenated temporary, the manager.cc case that
+	// slips past a plain `const static_string&` overload).
 	constexpr auto color = static_string::string("<") + static_string::string("tag") + static_string::string(">");
 	assert(strings::format("[{}] {} #{}", color, std::string_view("v"), 7) == "[<tag>] v #7");
+	assert(strings::format("{}{}{}", static_string::string("a") + static_string::string("b"), 1, static_string::string("!")) == "ab1!");
 
 	std::printf("format OK: substitution, padding, silent fallback, static_string\n");
 }

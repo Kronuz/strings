@@ -152,14 +152,25 @@ namespace detail {
 // implicit conversion, so it needs either a formatter (unavailable on those
 // libc++) or an explicit conversion here. Normalize static_string to a natively
 // formattable std::string_view; every other argument passes through untouched.
+//
+// This must catch static_string in every value category (a non-const rvalue is
+// the common case: a concatenated color constant). A pair of overloads does not
+// work -- for a non-const rvalue the forwarding-reference overload binds better
+// than a `const static_string&` one and wins -- so detect the type with a trait
+// and branch with `if constexpr` instead.
 template <typename T>
-constexpr T&& normalize_format_arg(T&& value) noexcept {
-	return std::forward<T>(value);
-}
+struct is_static_string : std::false_type {};
 
 template <std::size_t N, typename U>
-constexpr std::string_view normalize_format_arg(const static_string::static_string<N, U>& value) noexcept {
-	return std::string_view(value.data(), value.size());
+struct is_static_string<static_string::static_string<N, U>> : std::true_type {};
+
+template <typename T>
+constexpr decltype(auto) normalize_format_arg(T&& value) noexcept {
+	if constexpr (is_static_string<std::remove_cvref_t<T>>::value) {
+		return std::string_view(value.data(), value.size());
+	} else {
+		return std::forward<T>(value);
+	}
 }
 
 }  // namespace detail
