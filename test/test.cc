@@ -32,7 +32,14 @@ static void test_format() {
 	// inside std::vformat; the library swallows it and returns the raw string.
 	assert(strings::format("{} {} {}", 1) == "{} {} {}");
 
-	std::printf("format OK: substitution, padding, silent fallback\n");
+	// A static_string argument must format via its string_view value. This is the
+	// regression guard for libc++ builds whose <format> lacks custom-formatter
+	// support (macOS 14 / FreeBSD 14): format() normalizes static_string to a
+	// std::string_view so it stays formattable there. Mix it with other arg types.
+	constexpr auto color = static_string::string("<") + static_string::string("tag") + static_string::string(">");
+	assert(strings::format("[{}] {} #{}", color, std::string_view("v"), 7) == "[<tag>] v #7");
+
+	std::printf("format OK: substitution, padding, silent fallback, static_string\n");
 }
 
 

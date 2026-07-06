@@ -28,6 +28,7 @@
 #include <ostream>            // for std::ostream
 #include <string>             // for std::string
 #include <string_view>        // for std::string_view
+#include <tuple>              // for std::make_tuple, std::apply
 #include <type_traits>        // for std::forward
 #include <vector>             // for std::vector
 
@@ -138,11 +139,44 @@ inline std::vector<S> split(const S& value, const T& sep) {
 }
 
 
+namespace detail {
+
+// std::format normalization for format() arguments.
+//
+// Some libc++ versions ship an incomplete <format> that does NOT advertise
+// __cpp_lib_format (e.g. the macOS 14 and FreeBSD 14 SDKs). Those builds reject
+// user-defined std::formatter specializations when std::make_format_args builds
+// its argument store, so a type that is only formattable through a custom
+// formatter fails to compile there. static_string is exactly such a type: it
+// converts implicitly to std::string_view, but std::format never uses an
+// implicit conversion, so it needs either a formatter (unavailable on those
+// libc++) or an explicit conversion here. Normalize static_string to a natively
+// formattable std::string_view; every other argument passes through untouched.
+template <typename T>
+constexpr T&& normalize_format_arg(T&& value) noexcept {
+	return std::forward<T>(value);
+}
+
+template <std::size_t N, typename U>
+constexpr std::string_view normalize_format_arg(const static_string::static_string<N, U>& value) noexcept {
+	return std::string_view(value.data(), value.size());
+}
+
+}  // namespace detail
+
+
 template <typename... Args>
 inline std::string format(std::string_view format, Args&&... args) {
 	std::string str;
 	try {
-		str = std::vformat(format, std::make_format_args(args...));
+		// Hold the normalized arguments as named lvalues before handing them to
+		// std::make_format_args: it takes its arguments by (non-const, since
+		// LWG3810) lvalue reference, so a normalized temporary -- the string_view
+		// produced for a static_string -- must live in the tuple across the call.
+		auto store = std::make_tuple(detail::normalize_format_arg(std::forward<Args>(args))...);
+		str = std::apply([&](auto&... a) {
+			return std::vformat(format, std::make_format_args(a...));
+		}, store);
 	} catch(...) {
 		// A standalone string library must not log: on a format error fall
 		// back silently to the raw, unformatted format string.
