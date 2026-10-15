@@ -1,5 +1,7 @@
 # strings
 
+[![CI](https://github.com/Kronuz/strings/actions/workflows/ci.yml/badge.svg)](https://github.com/Kronuz/strings/actions/workflows/ci.yml)
+
 A small C++20 toolkit of general string utilities: `std::format`-style
 formatting, list joining, splitting, padding, trimming, case conversion,
 prefix/suffix tests, and human-readable byte/time formatters. Extracted from
