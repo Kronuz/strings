@@ -13,7 +13,8 @@ strings.cc                   The compiled humanizers: from_bytes / from_time / f
 test/test.cc                 Runnable smoke test: format (incl. silent fallback), join, split, indent, padding, predicates, case, replace, trim, humanizers.
 CMakeLists.txt               STATIC library `strings` (+ alias strings::strings); FetchContent of five sibling deps; CTest test `strings`.
 LICENSE                      MIT, Copyright (c) 2015-2019 Dubalu LLC.
-README.md                    What it is, install, usage, provenance.
+README.md                    What it is, install, quick start.
+docs/API.md                  Usage and the full list of helpers.
 ARCHITECTURE.md              Internal design: header/.cc split, format fallback, join, the humanizers.
 ```
 
