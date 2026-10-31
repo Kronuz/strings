@@ -1,5 +1,5 @@
 // Differential test: strings::join / lower / upper / inplace_* / replace must
-// match the frozen pre-optimization versions (test/strings_old.hh) exactly, on
+// match the frozen Xapiand versions (test/strings_old.hh) exactly, on
 // random and edge inputs.
 #include <cstdint>
 #include <cstdio>

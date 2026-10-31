@@ -166,7 +166,7 @@ inline std::string join(const std::vector<T>& values, std::string_view delimiter
 		}
 		return join(filtered_values, delimiter, last_delimiter);
 	} else {
-		// Collect pointers instead of copying the elements.
+		// Collect pointers to the kept elements; the elements are not copied.
 		std::vector<const T*> kept;
 		kept.reserve(values.size());
 		for (const auto& value : values) {
@@ -358,7 +358,7 @@ inline bool endswith(std::string_view text, char ch) {
 
 namespace detail {
 
-// ASCII case mapping with plain arithmetic instead of a table lookup, so the
+// ASCII case mapping with plain arithmetic, so the
 // compiler turns the loop into vector code (SWAR/NEON/SSE). Bytes >= 0x80 and
 // all non-letters are unchanged, like chars::tolower / chars::toupper.
 inline void ascii_lower(char* d, const char* s, std::size_t n) noexcept {
@@ -452,7 +452,7 @@ inplace_replace(std::string& str, std::string_view search, std::string_view repl
 	}
 	if (search_size != replacement_size) {
 		// The size changes: replacing in place would shift the tail once per match.
-		// With two or more matches, build the result in one pass instead.
+		// With two or more matches, build the result in one pass.
 		auto next = str.find(search, pos + search_size);
 		if (next != std::string::npos) {
 			std::string out;

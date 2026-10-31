@@ -1,4 +1,4 @@
-// Frozen copies of the pre-optimization join / upper / lower / replace, used as
+// Frozen copies of the Xapiand join / upper / lower / replace, used as
 // the oracle of the differential test. Do not edit.
 #pragma once
 

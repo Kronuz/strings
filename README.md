@@ -63,22 +63,31 @@ int main() {
 
 ## ⚡ Performance
 
-`lower`/`upper` are a vectorizable arithmetic loop over a copy (no per-byte
-`push_back`, no table lookup), `join` reserves its result and writes integers with
-`std::to_chars`, and `replace` builds its result in one pass when it has several
-matches of a different size. On Apple silicon (Apple clang 17, -O3), previous to now:
-`lower(string_view)` 16 B 19.6 ns to 6.7 ns, 256 B 532 ns to 26 ns, 4 KB 7.4 us to 119 ns
-(`absl::AsciiStrToLower` 1.2 us); `join(vector<int>)` of 1000 12.9 us to 8.5 us
-(`absl::StrJoin` 9.2 us); `join(vector<string>)` 1.0-1.4x; `replace` with several matches
-on 4 KB 34.7 us to 11.2 us (`absl::StrReplaceAll` 13.3 us).
-Run it with `cmake -B build -DSTRINGS_BUILD_BENCH=ON && cmake --build build && ./build/strings_bench`;
-`ctest` also runs a differential test against the previous implementations.
+`lower`/`upper` map ASCII letters with arithmetic over a copy, which the compiler
+vectorizes. `join` reserves its result and writes integers with `std::to_chars`.
+`replace` builds its result in one pass when it has several matches of a
+different size.
+
+On Apple silicon (Apple clang 17, -O3):
+
+| Operation | strings | abseil |
+| --- | --- | --- |
+| `lower(string_view)`, 16 B / 256 B / 4 KB | 6.7 ns / 26 ns / 119 ns | `AsciiStrToLower` 4 KB: 1.2 us |
+| `join(vector<int>)`, 1000 elements | 8.5 us | `StrJoin`: 9.2 us |
+| `replace`, several matches in 4 KB | 11.2 us | `StrReplaceAll`: 13.3 us |
+
+Run the benchmark with:
+
+```sh
+cmake -B build -DSTRINGS_BUILD_BENCH=ON && cmake --build build && ./build/strings_bench
+```
 
 ## 📚 Documentation
 
 - [docs/API.md](docs/API.md): every helper, with examples.
 - [ARCHITECTURE.md](ARCHITECTURE.md): how the humanizers pick units.
 - [AGENTS.md](AGENTS.md): repository map and traps.
+- [CHANGELOG.md](CHANGELOG.md): behavior and performance changes.
 
 ## 🛠️ Building and testing
 
@@ -96,17 +105,3 @@ pass on every platform.
 
 MIT, Copyright (c) 2015-2019 Dubalu LLC. See [LICENSE](LICENSE). Extracted from
 [Xapiand](https://github.com/Kronuz/Xapiand).
-
-## Behavior change note
-
-- `indent` used to drop empty lines and the trailing newline (and indented the
-  empty string). It now follows Python's `textwrap.indent`: blank lines and the
-  trailing newline are kept, blank and whitespace-only lines are not prefixed.
-  `indent("a\n\nb", ' ', 2)` is `"  a\n\n  b"`.
-- `inplace_replace` / `replace` with an empty search never terminated. They now
-  insert the replacement at every position, as Python does.
-- `hasupper` used libc `isupper` (locale dependent, undefined for negative
-  `char`). It now tests ASCII `A`-`Z` only.
-
-Tests: `test/fix_test.cc` (Python `textwrap.indent` golden values and an
-exhaustive reference check, frozen old `indent` to pin the changed classes).

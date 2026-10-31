@@ -1,4 +1,4 @@
-// strings benchmark: lower/upper, join and replace against the frozen old
+// strings benchmark: lower/upper, join and replace against the frozen Xapiand
 // implementations (test/strings_old.hh) and, when abseil is installed
 // (HAVE_ABSL), absl::AsciiStrToLower / StrJoin / StrReplaceAll. Build with
 // -DSTRINGS_BUILD_BENCH=ON. Best of 7 samples, ns per call.

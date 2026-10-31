@@ -47,10 +47,8 @@ try {
 }
 ```
 
-In Xapiand the `catch` logged through `L_EXC("Cannot format {}", repr(format))`
-before falling back. That logging call is the one piece of coupling that was
-removed on extraction (see `AGENTS.md`). The behavior on a bad format string is
-otherwise unchanged: you get the raw format text back, not an exception.
+On a bad format string you get the raw format text back. Nothing is logged and
+nothing is thrown. Xapiand's version also logged the error; see `AGENTS.md`.
 
 ## join()
 
@@ -61,23 +59,25 @@ the last separator is chosen by position. The result is built with as few
 allocations as possible: for `std::string` / `std::string_view` elements the total
 size is summed first and reserved; integer elements (not `bool` or the wide
 character types) are written with `std::to_chars` rather than through a temporary
-`std::to_string` string; any other element still goes through `std::to_string`.
+`std::to_string` string; any other element goes through `std::to_string`.
 The predicate overload drops the elements for which the predicate is true by
-collecting pointers to the kept ones (no copy of the elements; `vector<bool>`, whose
-elements have no address, is filtered into a copy).
+collecting pointers to the kept ones, without copying them. `vector<bool>`, whose
+elements have no address, is filtered into a copy.
 
 ## Case helpers and replace
 
 `lower`, `upper`, `inplace_lower` and `inplace_upper` map ASCII letters with plain
 arithmetic (`c + 32` when `c - 'A' < 26`) over a copy of the input, which the
 compiler vectorizes; bytes outside `A-Z` / `a-z` (including all bytes at or above
-0x80) are unchanged, as with `chars::tolower` / `chars::toupper`. `inplace_replace`
+0x80) are unchanged, the same mapping as `chars::tolower` / `chars::toupper`. `inplace_replace`
 replaces in place when the replacement has the same size as the search string or
 there is at most one match; with several matches and a size change it builds the
 result in one pass, because replacing in place shifts the tail once per match. An empty
 search is handled first: the replacement goes before every byte and at the end (Python's
-rule). `hasupper` tests `A`-`Z` with arithmetic, like the case helpers, not libc `isupper`.
-`indent` walks `'\n'`-separated lines itself (blank lines are kept, not prefixed).
+rule). `hasupper` tests ASCII `A`-`Z` with arithmetic, like the case helpers, so
+it does not depend on the locale. `indent` walks `'\n'`-separated lines itself,
+like Python's `textwrap.indent`: blank and whitespace-only lines are kept without
+the prefix, and the trailing newline is preserved.
 
 ## The humanizers
 
@@ -108,14 +108,15 @@ the `Humanize` constructor takes.
 Five sibling libraries, each resolving one local include:
 
 - `chars.hh` ([char-classify](https://github.com/Kronuz/char-classify)) —
-  `chars::toupper` / `chars::tolower`, the transforms behind the case helpers.
+  included by `strings.hh`; the case helpers use the same ASCII mapping as its
+  `chars::toupper` / `chars::tolower`.
 - `split.h` ([split](https://github.com/Kronuz/split)) — `Split<>`, used by
-  `split()` and by `indent()` to walk lines.
+  `split()`.
 - `static_string.hh` ([static-string](https://github.com/Kronuz/static-string)) —
   the `std::to_string` overload for `static_string`, and (transitively, via
   term-color) the type the color literals are built from.
-- `repr.hh` ([repr](https://github.com/Kronuz/repr)) — included in the original
-  header; kept on extraction.
+- `repr.hh` ([repr](https://github.com/Kronuz/repr)) — included by `strings.hh`,
+  as in Xapiand's header.
 - `colors.h` ([term-color](https://github.com/Kronuz/term-color)) — the color
   palette the humanizers use.
 
@@ -128,9 +129,7 @@ resolvable too. `colors.h` is only used inside `strings.cc`, but is linked
 
 The split between header and `.cc` is the usual one: generic, type-dependent
 helpers inline at the call site, while the humanizers (which carry a unit table,
-logs, and a color palette) compile once. Delegating case conversion to
-`char-classify` and coloring to `term-color` keeps this library from
-reimplementing a `tolower` table or an ANSI palette, and keeps the family
-consistent. The one deliberate departure from the original is the removed
-logging in `format()`: a string toolkit should never decide to write to a log,
-so the error path was reduced to its silent fallback.
+logs, and a color palette) compile once. Delegating coloring to `term-color`
+keeps this library from reimplementing an ANSI palette, and keeps the family
+consistent. `format()` never logs: a string toolkit should not decide to write
+to a log, so its error path is a silent fallback.

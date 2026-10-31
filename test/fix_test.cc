@@ -1,4 +1,4 @@
-// Correctness fixes: indent, hasupper, inplace_replace with an empty search.
+// indent, hasupper and inplace_replace with an empty search, against outside oracles.
 //
 // Oracles (not the implementation):
 //  * indent: Python's textwrap.indent(text, prefix). The golden strings below were
@@ -7,7 +7,7 @@
 //    whitespace) and is checked exhaustively over small strings.
 //  * hasupper: ASCII 'A'..'Z', the same classes as strings::upper / lower.
 //  * inplace_replace("", r): Python's str.replace("", r) ("abc","-" -> "-a-b-c-").
-// The frozen old indent is kept to assert exactly which inputs changed.
+// The frozen Xapiand indent pins exactly which inputs differ from it.
 #include <algorithm>
 #include <clocale>
 #include <cstdio>
@@ -23,8 +23,8 @@ static long failures = 0;
 #define CHECK(cond, ...) do { if (!(cond)) { ++failures; std::fprintf(stderr, "FAIL line %d: ", __LINE__); std::fprintf(stderr, __VA_ARGS__); std::fputc('\n', stderr); } } while (0)
 
 namespace frozen {
-// indent() before the fix: Split skipped empty lines, so blank lines and the
-// trailing newline were lost.
+// The Xapiand indent(): Split skips empty lines, so blank lines and the
+// trailing newline are lost.
 inline std::string indent(std::string_view str, char sep, int level, bool indent_first=true) {
 	std::string result;
 	result.reserve(((indent_first ? 1 : 0) + std::count(str.begin(), str.end(), '\n')) * level);
@@ -99,8 +99,8 @@ static void indent_exhaustive() {
 					auto got = strings::indent(s, '.', level, first);
 					auto want = ref_indent(s, '.', level, first);
 					CHECK(got == want, "indent len=%d level=%d first=%d \"%s\"", len, level, first, got.c_str());
-					// Old vs new: identical unless the text has an empty or blank line, a
-					// trailing newline, or is empty (the classes that changed by design).
+					// Frozen vs current: identical unless the text has an empty or blank line,
+					// a trailing newline, or is empty (the classes that differ by design).
 					bool changed = s.empty() || s.back() == '\n' || s.find("\n\n") != std::string::npos
 						|| s.front() == '\n';
 					bool blank = false;
@@ -132,7 +132,7 @@ static void hasupper_test() {
 		CHECK(strings::hasupper(s) == ref_hasupper(s), "hasupper embedded byte %d", c);
 	}
 	CHECK(!strings::hasupper("") && !strings::hasupper("abc 123") && strings::hasupper("abC"), "hasupper basics");
-	// In a Latin-1 locale libc isupper() treats 0xC0..0xDE as upper case; the old function followed it.
+	// In a Latin-1 locale libc isupper() treats 0xC0..0xDE as upper case; the frozen function follows it.
 	if (std::setlocale(LC_CTYPE, "en_US.ISO-8859-1") || std::setlocale(LC_CTYPE, "en_US.ISO8859-1")) {
 		std::string s(1, static_cast<char>(0xC9));
 		// (isupper(char) with a negative value is itself undefined; libcs differ on it.)

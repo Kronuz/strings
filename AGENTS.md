@@ -8,15 +8,19 @@ easy to fall into.
 ## Repo map
 
 ```
-strings.hh                   Inline/template utilities: format, join, split, indent, left/center/right, startswith/endswith/hasupper, upper/lower, replace, ltrim/rtrim/trim, and the from_* declarations. Plus a std::to_string extension. From Xapiand, with the log decoupling below.
-strings.cc                   The compiled humanizers: from_bytes / from_time / from_small_time / from_delta, on a Humanize helper. Includes "colors.h". From Xapiand, verbatim.
+strings.hh                   Inline/template utilities: format, join, split, indent, left/center/right, startswith/endswith/hasupper, upper/lower, replace, ltrim/rtrim/trim, and the from_* declarations. Plus a std::to_string extension.
+strings.cc                   The compiled humanizers: from_bytes / from_time / from_small_time / from_delta, on a Humanize helper. Includes "colors.h". Same as Xapiand's.
 test/fix_test.cc             indent / hasupper / empty-search replace against Python textwrap.indent and ASCII oracles.
+test/diff_test.cc            Differential test of join / lower / upper / replace against test/strings_old.hh.
+test/strings_old.hh          Frozen Xapiand join / upper / lower / replace, the differential test's oracle. Do not edit.
+bench/bench.cc               Benchmark (STRINGS_BUILD_BENCH=ON) against strings_old.hh and, when installed, abseil.
 test/test.cc                 Runnable smoke test: format (incl. silent fallback), join, split, indent, padding, predicates, case, replace, trim, humanizers.
 CMakeLists.txt               STATIC library `strings` (+ alias strings::strings); FetchContent of five sibling deps; CTest test `strings`.
 LICENSE                      MIT, Copyright (c) 2015-2019 Dubalu LLC.
 README.md                    What it is, install, quick start.
 docs/API.md                  Usage and the full list of helpers.
 ARCHITECTURE.md              Internal design: header/.cc split, format fallback, join, the humanizers.
+CHANGELOG.md                 Behavior and performance changes, newest first.
 ```
 
 This is not header-only. `strings.cc` must be compiled and linked; the header
@@ -32,7 +36,7 @@ ctest --test-dir build
 ```
 
 The first configure fetches the five sibling libraries over the network
-(FetchContent, `GIT_TAG main`). Expected output ends with
+(FetchContent, at the commits `CMakeLists.txt` pins). Expected output ends with
 `all strings tests passed`, exit 0. The test target is `strings_test`; the
 registered CTest name is `strings`. The test is only added when this repo is the
 top-level project (CMakeLists.txt), so consumers vendoring it via `FetchContent`
@@ -49,34 +53,25 @@ Five sibling libraries, each resolving one local include, all linked `PUBLIC`:
 
 | Include              | Library                                                      | CMake target to link              | What for                                  |
 | -------------------- | ----------------------------------------------------------- | --------------------------------- | ----------------------------------------- |
-| `"chars.hh"`         | [char-classify](https://github.com/Kronuz/char-classify)    | `char_classify::char_classify`    | `chars::toupper` / `chars::tolower`       |
+| `"chars.hh"`         | [char-classify](https://github.com/Kronuz/char-classify)    | `char_classify::char_classify`    | included by `strings.hh`                  |
 | `"split.h"`          | [split](https://github.com/Kronuz/split)                    | `split` (no namespaced alias)     | `Split<>` for split()                     |
 | `"static_string.hh"` | [static-string](https://github.com/Kronuz/static-string)    | `static_string::static_string`    | `to_string` overload; color literal type  |
-| `"repr.hh"`          | [repr](https://github.com/Kronuz/repr)                      | `repr::repr`                      | included in the original header           |
+| `"repr.hh"`          | [repr](https://github.com/Kronuz/repr)                      | `repr::repr`                      | included by `strings.hh`, as in Xapiand   |
 | `"colors.h"`         | [term-color](https://github.com/Kronuz/term-color)          | `term_color::term_color`          | the humanizer color palette               |
 
 Note the repo dir names use hyphens (`char-classify`, `static-string`,
 `term-color`) while the CMake target/alias names use underscores. `split` is the
 odd one out: it exposes only the bare `split` target, with no `split::split`
-alias, so link the bare name. We track every dep's tip with `GIT_TAG main`, like
-the rest of the family.
+alias, so link the bare name. `CMakeLists.txt` pins each dep to a commit.
 
-## The one decoupling delta
+## No logging
 
-Unlike most of the family, this extraction is not verbatim. The original Xapiand
-`strings.hh` was coupled to Xapiand's logging:
-
-- It did `#include "log.h"` (comment: `for L_DEBUG_TRY`).
-- The `format()` error path logged `L_EXC("Cannot format {}", repr(format))`
-  before falling back to the raw string.
-
-A standalone string library must not log. On extraction both were removed: the
-`#include "log.h"` is gone, and the `format()` catch now keeps only the silent
-fallback (`str = format;`) with a comment explaining why. The observable behavior
-on a bad format string is unchanged. There are zero remaining `L_*` /
-`log.h` / `opts` / `config` references; keep it that way.
-
-`strings.cc` was copied verbatim.
+Xapiand's `strings.hh` includes `"log.h"` and logs
+`L_EXC("Cannot format {}", repr(format))` in the `format()` error path. This
+library does neither: a standalone string library must not log, so the
+`format()` catch keeps only the silent fallback (`str = format;`). The result on
+a bad format string is the same raw text. There are no `L_*` / `log.h` / `opts`
+/ `config` references; keep it that way.
 
 ## Conventions
 
@@ -91,8 +86,7 @@ on a bad format string is unchanged. There are zero remaining `L_*` /
 
 ## Load-bearing invariants
 
-- **No logging, ever.** The whole point of the extraction was to cut the logging
-  dependency. Don't reintroduce `log.h`, `L_*` macros, or any other "report an
+- **No logging, ever.** The library has no logging dependency. Don't reintroduce `log.h`, `L_*` macros, or any other "report an
   error somewhere" behavior. The `format()` error path stays a silent fallback to
   the raw format string.
 - **`format()` swallows format errors.** A format string that doesn't match its
@@ -116,8 +110,8 @@ on a bad format string is unchanged. There are zero remaining `L_*` /
 - **Add a humanizer unit/tier.** Edit the `Humanize` tables in `strings.cc`
   (scaling exponents, units, and the colors vector, which must stay exactly one
   longer than units). The constructor asserts these sizes line up.
-- **Always extend the smoke test.** `test/test.cc` is the only executable check.
-  Add a case for any new helper or tier and assert the exact result.
+- **Always extend the smoke test.** `test/test.cc` asserts exact results for
+  every helper; the other tests cover specific oracles. Add a case for any new helper or tier and assert the exact result.
 
 ## Traps
 
@@ -136,9 +130,9 @@ on a bad format string is unchanged. There are zero remaining `L_*` /
 ## Standalone vs. Xapiand
 
 This is a standalone extraction from
-[Xapiand](https://github.com/Kronuz/Xapiand). `strings.cc` was copied verbatim;
-`strings.hh` was copied with the single logging decoupling described above (the
-`log.h` include and the `L_EXC` call in `format()` removed). The five local
-includes are resolved against the standalone sibling libraries through CMake
-instead of Xapiand's source tree. Any change here should be reconcilable with
-upstream as a plain edit, modulo that one decoupling.
+[Xapiand](https://github.com/Kronuz/Xapiand). `strings.cc` matches upstream.
+`strings.hh` differs in three ways: no logging (above), faster `join`, case
+helpers and `replace` with the same results, and Python-compatible `indent`,
+`hasupper` and empty-search `replace` (see `CHANGELOG.md`). The five local
+includes resolve against the standalone sibling libraries through CMake. Keep
+changes reconcilable with upstream.

@@ -6,10 +6,10 @@ include(FetchContent)
 # --- Dependencies ---
 # strings.hh / strings.cc pull in a handful of sibling headers from the rest of
 # the family, each its own already-extracted standalone library. FetchContent
-# pulls them in at their tips (GIT_TAG main) and puts their headers on the
+# pulls them in at pinned commits and puts their headers on the
 # include path so the `#include`s in the sources resolve unchanged:
-#   "chars.hh"          -> char-classify   (chars::toupper / chars::tolower for the case helpers)
-#   "split.h"           -> split           (Split<>, used by split() and indent())
+#   "chars.hh"          -> char-classify   (included by strings.hh)
+#   "split.h"           -> split           (Split<>, used by split())
 #   "static_string.hh"  -> static-string   (the to_string() overload for static_string)
 #   "repr.hh"           -> repr            (kept from the original header)
 #   "colors.h"          -> term-color      (the rgb()/CLEAR_COLOR palette the from_* humanizers color with)
