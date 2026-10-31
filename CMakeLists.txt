@@ -16,7 +16,7 @@ include(FetchContent)
 FetchContent_Declare(
   char_classify
   GIT_REPOSITORY https://github.com/Kronuz/char-classify.git
-  GIT_TAG        306ecd96d55d47d9bd3167eaeb7877e40d0631ac
+  GIT_TAG        a8904965dc904690ddd6875ab7acbfd271d97832
 )
 FetchContent_Declare(
   split
@@ -31,7 +31,7 @@ FetchContent_Declare(
 FetchContent_Declare(
   repr
   GIT_REPOSITORY https://github.com/Kronuz/repr.git
-  GIT_TAG        3191c08dace840b101d27ad37ed7aec03759b187
+  GIT_TAG        b47e947fde294d9e1847560ef9df23f95947ecf6
 )
 FetchContent_Declare(
   term_color
