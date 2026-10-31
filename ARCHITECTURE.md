@@ -54,13 +54,27 @@ otherwise unchanged: you get the raw format text back, not an exception.
 
 ## join()
 
-`join()` walks the vector once, appending `std::to_string(value)` of each
-element separated by the delimiter, and uses a distinct `last_delimiter` before
-the final element when one is given (so a list reads "a, b and c"). It computes
-the position of the last element up front with a reverse iterator so the final
-separator is chosen correctly even for a one-element list (where no separator is
-emitted at all). The predicate overload first `remove_copy_if`s the filtered
-elements into a fresh vector, then joins that.
+`join()` appends the text of each element, separated by the delimiter, with a
+distinct `last_delimiter` before the final element when one is given (so a list
+reads "a, b and c"; a one-element list has no separator). It indexes the vector, so
+the last separator is chosen by position. The result is built with as few
+allocations as possible: for `std::string` / `std::string_view` elements the total
+size is summed first and reserved; integer elements (not `bool` or the wide
+character types) are written with `std::to_chars` rather than through a temporary
+`std::to_string` string; any other element still goes through `std::to_string`.
+The predicate overload drops the elements for which the predicate is true by
+collecting pointers to the kept ones (no copy of the elements; `vector<bool>`, whose
+elements have no address, is filtered into a copy).
+
+## Case helpers and replace
+
+`lower`, `upper`, `inplace_lower` and `inplace_upper` map ASCII letters with plain
+arithmetic (`c + 32` when `c - 'A' < 26`) over a copy of the input, which the
+compiler vectorizes; bytes outside `A-Z` / `a-z` (including all bytes at or above
+0x80) are unchanged, as with `chars::tolower` / `chars::toupper`. `inplace_replace`
+replaces in place when the replacement has the same size as the search string or
+there is at most one match; with several matches and a size change it builds the
+result in one pass, because replacing in place shifts the tail once per match.
 
 ## The humanizers
 

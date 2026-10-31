@@ -25,6 +25,7 @@
 
 #include <algorithm>          // for std::count
 #include <cmath>              // for std::isinf, std::isnan
+#include <charconv>           // for std::to_chars
 #include <chrono>             // for std::chrono
 #include <ostream>            // for std::ostream
 #include <string>             // for std::string
@@ -83,32 +84,66 @@ std::ostream& operator<<(std::ostream& os, const T& obj) {
 
 namespace strings {
 
+namespace detail {
+
+template <typename T>
+inline constexpr bool join_is_string_like = std::is_same_v<T, std::string> || std::is_same_v<T, std::string_view>;
+
+// Integer types whose std::to_string result is the same text std::to_chars writes.
+template <typename T>
+inline constexpr bool join_is_integer = std::is_integral_v<T> && !std::is_same_v<T, bool> && !std::is_same_v<T, wchar_t> &&
+	!std::is_same_v<T, char8_t> && !std::is_same_v<T, char16_t> && !std::is_same_v<T, char32_t>;
+
+// Appends the text of one element. Strings are appended directly, integers are
+// written with to_chars (no temporary string), anything else goes through to_string.
+template <typename T>
+inline void join_append(std::string& result, const T& value) {
+	if constexpr (join_is_string_like<T>) {
+		result.append(std::string_view(value));
+	} else if constexpr (join_is_integer<T>) {
+		char buf[24];
+		auto r = std::to_chars(buf, buf + sizeof(buf), value);
+		result.append(buf, static_cast<std::size_t>(r.ptr - buf));
+	} else {
+		result.append(std::to_string(value));
+	}
+}
+
+// Joins `count` elements, `get(i)` returning the i-th as a const T&.
+// The result is reserved up front when the size is cheap to know (strings).
+template <typename T, typename Get>
+inline std::string join_impl(std::size_t count, Get&& get, std::string_view delimiter, std::string_view last_delimiter) {
+	std::string result;
+	if (count == 0) {
+		return result;
+	}
+	if constexpr (join_is_string_like<T>) {
+		std::size_t total = delimiter.size() * (count > 2 ? count - 2 : 0) + (count > 1 ? last_delimiter.size() : 0);
+		for (std::size_t i = 0; i < count; ++i) {
+			total += std::string_view(get(i)).size();
+		}
+		result.reserve(total);
+	} else if constexpr (join_is_integer<T>) {
+		result.reserve(count * (delimiter.size() + 3));
+	}
+	join_append<T>(result, get(0));
+	for (std::size_t i = 1; i < count; ++i) {
+		const auto& d = (i + 1 == count) ? last_delimiter : delimiter;
+		result.append(d.data(), d.size());
+		join_append<T>(result, get(i));
+	}
+	return result;
+}
+
+}  // namespace detail
+
+
 template <typename T>
 inline std::string join(const std::vector<T>& values, std::string_view delimiter, std::string_view last_delimiter)
 {
-	auto it = values.begin();
-	auto it_e = values.end();
-
-	auto rit = values.rbegin();
-	auto rit_e = values.rend();
-	if (rit != rit_e) ++rit;
-	auto it_l = rit != rit_e ? rit.base() : it_e;
-
-	std::string result;
-
-	if (it != it_e) {
-		result.append(std::to_string(*it++));
-	}
-	for (; it != it_l; ++it) {
-		result.append(delimiter.data(), delimiter.size());
-		result.append(std::to_string(*it));
-	}
-	if (it != it_e) {
-		result.append(last_delimiter.data(), last_delimiter.size());
-		result.append(std::to_string(*it));
-	}
-
-	return result;
+	// vector<bool> yields its elements by value; every other type is read in place.
+	using Ref = std::conditional_t<std::is_same_v<T, bool>, bool, const T&>;
+	return detail::join_impl<T>(values.size(), [&](std::size_t i) -> Ref { return values[i]; }, delimiter, last_delimiter);
 }
 
 
@@ -120,9 +155,27 @@ inline std::string join(const std::vector<T>& values, std::string_view delimiter
 
 template <typename T, typename UnaryPredicate, typename = std::enable_if_t<std::is_invocable<UnaryPredicate, T>::value>>
 inline std::string join(const std::vector<T>& values, std::string_view delimiter, std::string_view last_delimiter, UnaryPredicate pred) {
-	std::vector<T> filtered_values(values.size());
-	filtered_values.erase(std::remove_copy_if(values.begin(), values.end(), filtered_values.begin(), pred), filtered_values.end());
-	return join(filtered_values, delimiter, last_delimiter);
+	// Elements for which pred is true are dropped.
+	if constexpr (std::is_same_v<T, bool>) {
+		// vector<bool> has no addressable elements: filter a copy.
+		std::vector<T> filtered_values;
+		for (bool value : values) {
+			if (!pred(value)) {
+				filtered_values.push_back(value);
+			}
+		}
+		return join(filtered_values, delimiter, last_delimiter);
+	} else {
+		// Collect pointers instead of copying the elements.
+		std::vector<const T*> kept;
+		kept.reserve(values.size());
+		for (const auto& value : values) {
+			if (!pred(value)) {
+				kept.push_back(&value);
+			}
+		}
+		return detail::join_impl<T>(kept.size(), [&](std::size_t i) -> const T& { return *kept[i]; }, delimiter, last_delimiter);
+	}
 }
 
 
@@ -294,10 +347,32 @@ inline bool endswith(std::string_view text, char ch) {
 }
 
 
+namespace detail {
+
+// ASCII case mapping with plain arithmetic instead of a table lookup, so the
+// compiler turns the loop into vector code (SWAR/NEON/SSE). Bytes >= 0x80 and
+// all non-letters are unchanged, like chars::tolower / chars::toupper.
+inline void ascii_lower(char* d, const char* s, std::size_t n) noexcept {
+	for (std::size_t i = 0; i < n; ++i) {
+		const unsigned char c = static_cast<unsigned char>(s[i]);
+		d[i] = static_cast<char>(c + (static_cast<unsigned char>(c - 'A') < 26 ? 32 : 0));
+	}
+}
+
+inline void ascii_upper(char* d, const char* s, std::size_t n) noexcept {
+	for (std::size_t i = 0; i < n; ++i) {
+		const unsigned char c = static_cast<unsigned char>(s[i]);
+		d[i] = static_cast<char>(c - (static_cast<unsigned char>(c - 'a') < 26 ? 32 : 0));
+	}
+}
+
+}  // namespace detail
+
+
 inline void
 inplace_upper(std::string& str)
 {
-	std::transform(str.begin(), str.end(), str.begin(), chars::toupper);
+	detail::ascii_upper(str.data(), str.data(), str.size());
 }
 
 
@@ -312,8 +387,8 @@ upper(std::string&& str)
 inline std::string
 upper(std::string_view str)
 {
-	std::string result;
-	std::transform(str.begin(), str.end(), std::back_inserter(result), chars::toupper);
+	std::string result(str);
+	inplace_upper(result);
 	return result;
 }
 
@@ -321,7 +396,7 @@ upper(std::string_view str)
 inline void
 inplace_lower(std::string& str)
 {
-	std::transform(str.begin(), str.end(), str.begin(), chars::tolower);
+	detail::ascii_lower(str.data(), str.data(), str.size());
 }
 
 
@@ -336,8 +411,8 @@ lower(std::string&& str)
 inline std::string
 lower(std::string_view str)
 {
-	std::string result;
-	std::transform(str.begin(), str.end(), std::back_inserter(result), chars::tolower);
+	std::string result(str);
+	inplace_lower(result);
 	return result;
 }
 
@@ -348,6 +423,29 @@ inplace_replace(std::string& str, std::string_view search, std::string_view repl
 	auto pos = str.find(search);
 	auto search_size = search.size();
 	auto replacement_size = replacement.size();
+	if (pos == std::string::npos) {
+		return;
+	}
+	if (search_size != 0 && search_size != replacement_size) {
+		// The size changes: replacing in place would shift the tail once per match.
+		// With two or more matches, build the result in one pass instead.
+		auto next = str.find(search, pos + search_size);
+		if (next != std::string::npos) {
+			std::string out;
+			out.reserve(str.size() + (replacement_size > search_size ? (replacement_size - search_size) * 2 : 0));
+			std::size_t last = 0;
+			do {
+				out.append(str, last, pos - last);
+				out.append(replacement);
+				last = pos + search_size;
+				pos = next;
+				next = pos != std::string::npos ? str.find(search, pos + search_size) : std::string::npos;
+			} while (pos != std::string::npos);
+			out.append(str, last, std::string::npos);
+			str = std::move(out);
+			return;
+		}
+	}
 	while (pos != std::string::npos) {
 		str.replace(pos, search_size, replacement);
 		pos = str.find(search, pos + replacement_size);

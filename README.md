@@ -61,6 +61,19 @@ int main() {
 - ✅ The small text chores of servers and tools: log lines, reports, CLI output.
 - ❌ Unicode-aware case conversion or width: helpers work byte by byte.
 
+## ⚡ Performance
+
+`lower`/`upper` are a vectorizable arithmetic loop over a copy (no per-byte
+`push_back`, no table lookup), `join` reserves its result and writes integers with
+`std::to_chars`, and `replace` builds its result in one pass when it has several
+matches of a different size. On Apple silicon (Apple clang 17, -O3), previous to now:
+`lower(string_view)` 16 B 19.6 ns to 6.7 ns, 256 B 532 ns to 26 ns, 4 KB 7.4 us to 119 ns
+(`absl::AsciiStrToLower` 1.2 us); `join(vector<int>)` of 1000 12.9 us to 8.5 us
+(`absl::StrJoin` 9.2 us); `join(vector<string>)` 1.0-1.4x; `replace` with several matches
+on 4 KB 34.7 us to 11.2 us (`absl::StrReplaceAll` 13.3 us).
+Run it with `cmake -B build -DSTRINGS_BUILD_BENCH=ON && cmake --build build && ./build/strings_bench`;
+`ctest` also runs a differential test against the previous implementations.
+
 ## 📚 Documentation
 
 - [docs/API.md](docs/API.md): every helper, with examples.

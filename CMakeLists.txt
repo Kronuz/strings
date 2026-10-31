@@ -31,7 +31,7 @@ FetchContent_Declare(
 FetchContent_Declare(
   repr
   GIT_REPOSITORY https://github.com/Kronuz/repr.git
-  GIT_TAG        0fe9a1e98914a423574bfe675eaa82f3e1cb1df6
+  GIT_TAG        3191c08dace840b101d27ad37ed7aec03759b187
 )
 FetchContent_Declare(
   term_color
@@ -82,4 +82,24 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   add_executable(strings_usage examples/usage.cc)
   target_link_libraries(strings_usage PRIVATE strings)
   add_test(NAME strings_usage COMMAND strings_usage)
+
+  # Differential test against the frozen pre-optimization join/lower/upper/replace.
+  add_executable(strings_diff_test test/diff_test.cc)
+  target_include_directories(strings_diff_test PRIVATE test)
+  target_link_libraries(strings_diff_test PRIVATE strings)
+  add_test(NAME strings_diff COMMAND strings_diff_test)
+
+  # Benchmark (not run by ctest). The abseil comparison is optional and only
+  # linked here, never by the library target.
+  option(STRINGS_BUILD_BENCH "Build bench/bench.cc" OFF)
+  if(STRINGS_BUILD_BENCH)
+    add_executable(strings_bench bench/bench.cc)
+    target_include_directories(strings_bench PRIVATE test)
+    target_link_libraries(strings_bench PRIVATE strings)
+    find_package(absl QUIET)
+    if(absl_FOUND)
+      target_compile_definitions(strings_bench PRIVATE HAVE_ABSL=1)
+      target_link_libraries(strings_bench PRIVATE absl::strings absl::str_format)
+    endif()
+  endif()
 endif()
