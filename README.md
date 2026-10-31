@@ -96,3 +96,17 @@ pass on every platform.
 
 MIT, Copyright (c) 2015-2019 Dubalu LLC. See [LICENSE](LICENSE). Extracted from
 [Xapiand](https://github.com/Kronuz/Xapiand).
+
+## Behavior change note
+
+- `indent` used to drop empty lines and the trailing newline (and indented the
+  empty string). It now follows Python's `textwrap.indent`: blank lines and the
+  trailing newline are kept, blank and whitespace-only lines are not prefixed.
+  `indent("a\n\nb", ' ', 2)` is `"  a\n\n  b"`.
+- `inplace_replace` / `replace` with an empty search never terminated. They now
+  insert the replacement at every position, as Python does.
+- `hasupper` used libc `isupper` (locale dependent, undefined for negative
+  `char`). It now tests ASCII `A`-`Z` only.
+
+Tests: `test/fix_test.cc` (Python `textwrap.indent` golden values and an
+exhaustive reference check, frozen old `indent` to pin the changed classes).

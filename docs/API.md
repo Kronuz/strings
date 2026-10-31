@@ -43,11 +43,16 @@ with text. The header holds the inline and template utilities:
   optional predicate that drops elements before joining.
 - `split(value, sep)` — split a string into a `std::vector` of pieces.
 - `indent(str, fill, level[, indent_first])` — prefix each line with `level`
-  copies of a fill character.
+  copies of a fill character, like Python's `textwrap.indent`: empty and
+  whitespace-only lines stay as they are (no prefix), blank lines and a trailing
+  newline are preserved, and `indent_first = false` leaves the first line flush.
 - `left` / `center` / `right` — width-based padding.
-- `startswith` / `endswith` (string or `char`), `hasupper` — predicates.
+- `startswith` / `endswith` (string or `char`), `hasupper` (ASCII `A`-`Z`, independent of
+  the C locale) — predicates.
 - `upper` / `lower` / `inplace_upper` / `inplace_lower` — case conversion.
-- `replace` / `inplace_replace` — substitute every occurrence.
+- `replace` / `inplace_replace` — substitute every occurrence. An empty search
+  matches at every position including both ends, as in Python
+  (`replace("abc", "", "-")` is `"-a-b-c-"`).
 - `ltrim` / `rtrim` / `trim` — strip leading/trailing whitespace (returns a
   `std::string_view` into the input).
 

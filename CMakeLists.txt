@@ -89,6 +89,11 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   target_link_libraries(strings_diff_test PRIVATE strings)
   add_test(NAME strings_diff COMMAND strings_diff_test)
 
+  # indent / hasupper / empty-search replace against Python textwrap.indent and ASCII.
+  add_executable(strings_fix_test test/fix_test.cc)
+  target_link_libraries(strings_fix_test PRIVATE strings)
+  add_test(NAME strings_fix COMMAND strings_fix_test)
+
   # Benchmark (not run by ctest). The abseil comparison is optional and only
   # linked here, never by the library target.
   option(STRINGS_BUILD_BENCH "Build bench/bench.cc" OFF)

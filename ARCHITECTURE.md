@@ -74,7 +74,10 @@ compiler vectorizes; bytes outside `A-Z` / `a-z` (including all bytes at or abov
 0x80) are unchanged, as with `chars::tolower` / `chars::toupper`. `inplace_replace`
 replaces in place when the replacement has the same size as the search string or
 there is at most one match; with several matches and a size change it builds the
-result in one pass, because replacing in place shifts the tail once per match.
+result in one pass, because replacing in place shifts the tail once per match. An empty
+search is handled first: the replacement goes before every byte and at the end (Python's
+rule). `hasupper` tests `A`-`Z` with arithmetic, like the case helpers, not libc `isupper`.
+`indent` walks `'\n'`-separated lines itself (blank lines are kept, not prefixed).
 
 ## The humanizers
 

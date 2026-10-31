@@ -10,6 +10,7 @@ easy to fall into.
 ```
 strings.hh                   Inline/template utilities: format, join, split, indent, left/center/right, startswith/endswith/hasupper, upper/lower, replace, ltrim/rtrim/trim, and the from_* declarations. Plus a std::to_string extension. From Xapiand, with the log decoupling below.
 strings.cc                   The compiled humanizers: from_bytes / from_time / from_small_time / from_delta, on a Humanize helper. Includes "colors.h". From Xapiand, verbatim.
+test/fix_test.cc             indent / hasupper / empty-search replace against Python textwrap.indent and ASCII oracles.
 test/test.cc                 Runnable smoke test: format (incl. silent fallback), join, split, indent, padding, predicates, case, replace, trim, humanizers.
 CMakeLists.txt               STATIC library `strings` (+ alias strings::strings); FetchContent of five sibling deps; CTest test `strings`.
 LICENSE                      MIT, Copyright (c) 2015-2019 Dubalu LLC.
@@ -49,7 +50,7 @@ Five sibling libraries, each resolving one local include, all linked `PUBLIC`:
 | Include              | Library                                                      | CMake target to link              | What for                                  |
 | -------------------- | ----------------------------------------------------------- | --------------------------------- | ----------------------------------------- |
 | `"chars.hh"`         | [char-classify](https://github.com/Kronuz/char-classify)    | `char_classify::char_classify`    | `chars::toupper` / `chars::tolower`       |
-| `"split.h"`          | [split](https://github.com/Kronuz/split)                    | `split` (no namespaced alias)     | `Split<>` for split() and indent()        |
+| `"split.h"`          | [split](https://github.com/Kronuz/split)                    | `split` (no namespaced alias)     | `Split<>` for split()                     |
 | `"static_string.hh"` | [static-string](https://github.com/Kronuz/static-string)    | `static_string::static_string`    | `to_string` overload; color literal type  |
 | `"repr.hh"`          | [repr](https://github.com/Kronuz/repr)                      | `repr::repr`                      | included in the original header           |
 | `"colors.h"`         | [term-color](https://github.com/Kronuz/term-color)          | `term_color::term_color`          | the humanizer color palette               |

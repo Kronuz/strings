@@ -251,25 +251,33 @@ inline std::string format(std::string_view format, Args&&... args) {
 }
 
 
+// Prefix each line of `str` with `level` copies of `sep`, like Python's
+// textwrap.indent: lines are split on '\n', a line that is empty or only
+// whitespace (space, \t, \r, \v, \f) is kept as it is without the prefix, and
+// the text between and after the lines, including a trailing '\n', is preserved.
+// With indent_first == false the first line is not prefixed. `level <= 0` adds
+// nothing.
 inline std::string indent(std::string_view str, char sep, int level, bool indent_first=true) {
+	const std::size_t pad = level > 0 ? static_cast<std::size_t>(level) : 0;
 	std::string result;
-	result.reserve(((indent_first ? 1 : 0) + std::count(str.begin(), str.end(), '\n')) * level);
+	result.reserve(str.size() + (static_cast<std::size_t>(std::count(str.begin(), str.end(), '\n')) + 1) * pad);
 
-	if (indent_first) {
-		result.append(level, sep);
-	}
-
-	Split<std::string_view> lines(str, '\n');
-	auto it = lines.begin();
-	if (it != lines.end()) {
-		for (; !it.last(); ++it) {
-			const auto& line = *it;
-			result.append(line);
-			result.push_back('\n');
-			result.append(level, sep);
+	bool first = true;
+	std::size_t pos = 0;
+	while (pos < str.size()) {
+		auto nl = str.find('\n', pos);
+		auto end = nl == std::string_view::npos ? str.size() : nl;
+		auto line = str.substr(pos, end - pos);
+		if (!(first && !indent_first) && line.find_first_not_of(" \t\r\v\f") != std::string_view::npos) {
+			result.append(pad, sep);
 		}
-		const auto& line = *it;
 		result.append(line);
+		if (nl == std::string_view::npos) {
+			break;
+		}
+		result.push_back('\n');
+		pos = nl + 1;
+		first = false;
 	}
 
 	return result;
@@ -328,7 +336,8 @@ inline bool startswith(std::string_view text, char ch) {
 
 inline bool hasupper(std::string_view str) {
 	for (const auto& c : str) {
-		if (isupper(c) != 0) {
+		// ASCII only, like upper() / lower(): independent of the C locale.
+		if (static_cast<unsigned char>(c - 'A') < 26) {
 			return true;
 		}
 	}
@@ -420,13 +429,28 @@ lower(std::string_view str)
 inline void
 inplace_replace(std::string& str, std::string_view search, std::string_view replacement)
 {
-	auto pos = str.find(search);
 	auto search_size = search.size();
 	auto replacement_size = replacement.size();
+	if (search_size == 0) {
+		// An empty search matches at every position, including both ends, as in
+		// Python ("abc".replace("", "-") == "-a-b-c-").
+		if (replacement_size != 0) {
+			std::string out;
+			out.reserve(str.size() + (str.size() + 1) * replacement_size);
+			out.append(replacement);
+			for (char c : str) {
+				out.push_back(c);
+				out.append(replacement);
+			}
+			str = std::move(out);
+		}
+		return;
+	}
+	auto pos = str.find(search);
 	if (pos == std::string::npos) {
 		return;
 	}
-	if (search_size != 0 && search_size != replacement_size) {
+	if (search_size != replacement_size) {
 		// The size changes: replacing in place would shift the tail once per match.
 		// With two or more matches, build the result in one pass instead.
 		auto next = str.find(search, pos + search_size);
