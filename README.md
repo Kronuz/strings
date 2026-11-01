@@ -74,15 +74,15 @@ Apple M4 Pro (Apple clang 17, -O3), `strings_bench`, ns per call:
 
 | Operation | strings | original | abseil |
 | --- | --- | --- | --- |
-| `lower(string_view)`, 8 B / 16 B / 4 KB | 3.3 / 4.5 ns / 114 ns | 8.8 / 20 ns / 7.9 us | `AsciiStrToLower` 4 KB: 1.2 us |
-| `join(vector<string>)`, 10 / 1000 elements | 60 ns / 4.8 us | 78 ns / 5.0 us | |
-| `join(vector<int>)`, 1000 elements | 8.6 us | 13.3 us | `StrJoin`: 9.2 us |
-| `replace`, 1 byte by 3, 256 B with 64 matches | 608 ns | 925 ns | |
-| `replace`, several matches in 4 KB | 7.9 us | 34.9 us | `StrReplaceAll`: 13.3 us |
+| `lower(string_view)`, 8 B / 16 B / 4 KB | 3.3 / 4.4 ns / 120 ns | 8.9 / 20.5 ns / 7.7 us | `AsciiStrToLower` 4 KB: 1.2 us |
+| `join(vector<string>)`, 10 / 1000 elements | 57 ns / 4.8 us | 76 ns / 4.9 us | |
+| `join(vector<int>)`, 1000 elements | 8.5 us | 13.0 us | `StrJoin`: 9.2 us |
+| `replace`, 1 byte by 3, 256 B with 64 matches | 597 ns | 916 ns | |
+| `replace`, several matches in 4 KB | 8.0 us | 34.4 us | `StrReplaceAll`: 13.3 us |
 
 The abseil figures come from the benchmark built with abseil installed (`HAVE_ABSL`) on Apple
-silicon. The same rows on an Intel i9-9980HK (Apple clang 17): `lower` 8 B 11 ns, 4 KB 262 ns;
-`join(vector<int>)` 1000 19.3 us; `replace` 256 B with 64 matches 1.3 us, 4 KB 14.6 us.
+silicon. The same rows on an Intel i9-9980HK (Apple clang 17): `lower` 8 B 9.9 ns, 4 KB 240 ns;
+`join(vector<int>)` 1000 18.3 us; `replace` 256 B with 64 matches 1.25 us, 4 KB 13.9 us.
 
 Run the benchmark with:
 

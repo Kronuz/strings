@@ -14,7 +14,8 @@ test/fix_test.cc             indent / hasupper / empty-search replace against Py
 test/diff_test.cc            Differential test of join / lower / upper / replace against test/strings_old.hh.
 test/paths_test.cc           lower / upper against the per-byte definition, replace against a naive Python-rule reference (exhaustive small domain, 0 to 300 matches, piece sizes, aliasing), what replace does to the buffer, join paths. The path test fails on the pre-fix header.
 test/strings_old.hh          Frozen Xapiand join / upper / lower / replace, the differential test's oracle. Do not edit.
-bench/bench.cc               Benchmark (STRINGS_BUILD_BENCH=ON) against strings_old.hh and, when installed, abseil: tiny to 4 KB case mapping, join of 1 to 1000 elements, replace with 0 to 1024 matches in every size relation.
+bench/bench.cc               Benchmark (STRINGS_BUILD_BENCH=ON) against strings_old.hh and, when installed, abseil: tiny to 4 KB case mapping, join of 1 to 1000 elements, replace with 0 to 1024 matches in every size relation. Every row measures the original twice (old, old2) around the new code; `aa` is old / old2, the noise of the row.
+tools/mutants.py             Breaks strings.hh in 25 single-line ways (`tools/mutants.py OUT -I<dependency dirs>`; `CXX` selects the compiler) and requires test/paths_test.cc (one: test/diff_test.cc) to fail on each.
 test/test.cc                 Runnable smoke test: format (incl. silent fallback), join, split, indent, padding, predicates, case, replace, trim, humanizers.
 CMakeLists.txt               STATIC library `strings` (+ alias strings::strings); FetchContent of five sibling deps; CTest test `strings`.
 LICENSE                      MIT, Copyright (c) 2015-2019 Dubalu LLC.

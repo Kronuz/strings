@@ -212,16 +212,27 @@ inline bool join_is_short(const std::vector<T>& values) {
 	return values.size() <= 1 || (values.size() <= 4 && std::string_view(values[0]).size() < 16);
 }
 
+// The short path appends a std::string as a std::string: through a string_view the same append compiled
+// 3 to 11% slower with Apple clang on x86-64 at two to four short elements.
+template <typename T>
+inline void join_append_short(std::string& result, const T& value) {
+	if constexpr (std::is_same_v<T, std::string>) {
+		result.append(value);
+	} else {
+		join_append<T>(result, value);
+	}
+}
+
 template <typename T>
 inline std::string join_short(const std::vector<T>& values, std::string_view delimiter, std::string_view last_delimiter) {
 	std::string result;
 	const auto count = values.size();
 	if (count != 0) {
-		join_append<T>(result, values[0]);
+		join_append_short<T>(result, values[0]);
 		for (std::size_t i = 1; i < count; ++i) {
 			const auto& between = (i + 1 == count) ? last_delimiter : delimiter;
 			result.append(between.data(), between.size());
-			join_append<T>(result, values[i]);
+			join_append_short<T>(result, values[i]);
 		}
 	}
 	return result;
@@ -542,12 +553,16 @@ STRINGS_NEVER_INLINE void ascii_case_long_in_place(char* p, std::size_t n) noexc
 	}
 }
 
+// Maps a string where it is. Below 8 bytes this is the original's loop, over the string's own iterators:
+// written on a pointer the same loop gets a vector prologue that a few bytes do not repay (2 to 25% slower
+// at 4 to 6 bytes on x86-64), and through a function taking (pointer, size) the compiler no longer sees it
+// is the string.
 template <bool Lower>
-STRINGS_ALWAYS_INLINE void ascii_case_in_place(char* p, std::size_t n) noexcept {
-	if (n < 8) {
-		std::transform(p, p + n, p, [](char c) { return case_table_byte<Lower>(c); });
+STRINGS_ALWAYS_INLINE void ascii_case_in_place(std::string& str) {
+	if (str.size() < 8) {
+		std::transform(str.begin(), str.end(), str.begin(), [](char c) { return case_table_byte<Lower>(c); });
 	} else {
-		ascii_case_long_in_place<Lower>(p, n);
+		ascii_case_long_in_place<Lower>(str.data(), str.size());
 	}
 }
 
@@ -570,13 +585,25 @@ STRINGS_ALWAYS_INLINE void ascii_upper(char* d, const char* s, std::size_t n) no
 	ascii_case<false>(d, s, n);
 }
 
+// The original's loop for up to seven bytes: a default-constructed string and one push_back per mapped
+// byte. Anything else costs more than it saves: sizing the string first, or mapping in a buffer and copying it
+// (a library call either way) ran 10 to 20% slower with Apple clang on x86-64.
+template <bool Lower>
+STRINGS_ALWAYS_INLINE std::string case_tiny(std::string_view str) {
+	std::string result;
+	for (char c : str) {
+		result.push_back(case_table_byte<Lower>(c));
+	}
+	return result;
+}
+
 }  // namespace detail
 
 
-inline void
+STRINGS_ALWAYS_INLINE void
 inplace_upper(std::string& str)
 {
-	detail::ascii_case_in_place<false>(str.data(), str.size());
+	detail::ascii_case_in_place<false>(str);
 }
 
 
@@ -591,23 +618,19 @@ upper(std::string&& str)
 inline std::string
 upper(std::string_view str)
 {
-	// Up to seven bytes go one by one into the short-string buffer, with no set-up cost.
-	std::string result(str.size() < 8 ? 0 : str.size(), '\0');
 	if (str.size() < 8) {
-		for (char c : str) {
-			result.push_back(detail::case_table_byte<false>(c));
-		}
-		return result;
+		return detail::case_tiny<false>(str);
 	}
+	std::string result(str.size(), '\0');
 	detail::ascii_upper(result.data(), str.data(), str.size());
 	return result;
 }
 
 
-inline void
+STRINGS_ALWAYS_INLINE void
 inplace_lower(std::string& str)
 {
-	detail::ascii_case_in_place<true>(str.data(), str.size());
+	detail::ascii_case_in_place<true>(str);
 }
 
 
@@ -622,14 +645,10 @@ lower(std::string&& str)
 inline std::string
 lower(std::string_view str)
 {
-	// Up to seven bytes go one by one into the short-string buffer, with no set-up cost.
-	std::string result(str.size() < 8 ? 0 : str.size(), '\0');
 	if (str.size() < 8) {
-		for (char c : str) {
-			result.push_back(detail::case_table_byte<true>(c));
-		}
-		return result;
+		return detail::case_tiny<true>(str);
 	}
+	std::string result(str.size(), '\0');
 	detail::ascii_lower(result.data(), str.data(), str.size());
 	return result;
 }

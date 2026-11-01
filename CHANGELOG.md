@@ -3,6 +3,99 @@
 Notable changes to `strings`, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 2026-11-01, small inputs again
+
+### Fixed
+
+The audit fix left rows between 0.79 and 0.98 of the original: `inplace_lower` and
+`inplace_upper` of 1 to 4 B, `join` of two to four strings, `replace` of 16 B and of 256 B
+with a few matches. This pass gives them the original's shape and keeps the large-input
+gains.
+
+- **`inplace_lower` / `inplace_upper`** below 8 bytes run the original's loop, `std::transform`
+  over the string's own iterators. The same loop written on a pointer (what the previous build
+  did) gets a vector prologue that a few bytes do not repay: up to 19% slower at 4 to 6 bytes with
+  Apple clang on x86-64, 0.79 to 0.98 at 1 to 4 bytes on the M1 and M4. From 8 bytes on nothing
+  changes.
+- **`join(vector<string>)`** of one to four short strings appends a `std::string` as a
+  `std::string`. Through a `std::string_view` the same append compiled 3 to 11% slower with
+  Apple clang on x86-64.
+- **`lower` / `upper`** of a `string_view` below 8 bytes default-construct the result and push
+  the mapped bytes, as the original did, instead of constructing it with a size first.
+- Two structures were measured and not kept. Keeping `join`'s short path inline and moving the
+  sized path into a separate function made 10 to 1000 element joins 0.63 to 0.88 of the original
+  on every machine, although the sized loop compiled to the same instructions. Keeping no match,
+  one match and short strings of `inplace_replace` in the caller and the rest in a separate
+  function moved the `g++ 16` rows with one match up (4 KB: 0.88 to 0.96) and the two- and
+  three-match rows down on the M4 and the i9 (256 B with 3 matches on the M4: 0.99 to 0.90).
+
+### Changed
+
+- `bench/bench.cc` measures the original twice per row, around the new code, as two copies of
+  the same lambda: `aa` is old / old2, the noise of the row (layout and inlining included), and
+  `x` compares the new code with the better of the two.
+
+### Added
+
+- `tools/mutants.py` breaks `strings.hh` in 25 single-line ways and requires a test to fail on
+  each; all 25 die.
+
+Speed against the original (old / new = speedup), `strings_bench` built by CI with -O3, three
+runs on each machine with the machine to itself, best of three against the better of the two
+original columns. Times are ns per call (microseconds where marked):
+
+| Row (ns per call) | M4 Pro | i9 clang | i9 g++ 16 |
+| --- | --- | --- | --- |
+| `lower(string_view) 1 B` | 2.2 / 2.3 = 0.96x | 6.5 / 6.6 = 0.98x | 9.8 / 5.5 = 1.78x |
+| `lower(string_view) 4 B` | 4.6 / 4.7 = 0.98x | 10.0 / 10.3 = 0.97x | 27.9 / 10.3 = 2.71x |
+| `lower(string_view) 8 B` | 8.9 / 3.3 = 2.70x | 16.1 / 9.9 = 1.63x | 52.7 / 19.6 = 2.69x |
+| `lower(string_view) 16 B` | 20.5 / 4.4 = 4.66x | 31.9 / 11.4 = 2.80x | 144.0 / 53.6 = 2.69x |
+| `lower(string_view) 4096 B` | 7.74 / 0.12 us = 63.46x | 7.26 / 0.24 us = 29.90x | 26.79 / 0.28 us = 96.38x |
+| `inplace_lower 1 B` | 2.6 / 2.0 = 1.30x | 6.5 / 6.0 = 1.08x | 8.6 / 4.6 = 1.87x |
+| `inplace_lower 4 B` | 4.4 / 3.5 = 1.26x | 7.6 / 6.6 = 1.15x | 25.2 / 5.3 = 4.75x |
+| `inplace_lower 16 B` | 8.0 / 2.7 = 2.96x | 14.0 / 10.2 = 1.37x | 96.6 / 6.2 = 15.58x |
+| `join(vector<string>) 1` | 5.0 / 4.4 = 1.14x | 12.5 / 12.2 = 1.02x | 7.5 / 6.8 = 1.10x |
+| `join(vector<string>) 2` | 9.0 / 9.6 = 0.94x | 20.2 / 21.2 = 0.95x | 57.0 / 57.6 = 0.99x |
+| `join(vector<string>) 3` | 27.3 / 27.4 = 1.00x | 67.2 / 69.4 = 0.97x | 60.9 / 62.2 = 0.98x |
+| `join(vector<string>) 4` | 31.0 / 32.9 = 0.94x | 73.8 / 77.1 = 0.96x | 109.7 / 112.8 = 0.97x |
+| `join(vector<string>) 10` | 75.6 / 57.1 = 1.32x | 160.8 / 127.3 = 1.26x | 194.3 / 121.5 = 1.60x |
+| `join(vector<string>) 1000` | 4.94 / 4.76 us = 1.04x | 9.96 / 8.87 us = 1.12x | 9.12 / 8.69 us = 1.05x |
+| `join(vector<string>) 2 x 60 B` | 38.9 / 24.2 = 1.61x | 97.6 / 59.3 = 1.65x | 137.0 / 55.1 = 2.49x |
+| `join(vector<int>) 1000` | 13.00 / 8.53 us = 1.52x | 26.33 / 18.28 us = 1.44x | 19.57 / 18.04 us = 1.08x |
+| `replace 1->3, 16 B, 2 matches` | 27.5 / 28.6 = 0.96x | 57.4 / 60.1 = 0.96x | 128.4 / 141.0 = 0.91x |
+| `replace 1->3, 256 B, 1 match` | 37.8 / 39.1 = 0.97x | 132.8 / 134.0 = 0.99x | 251.1 / 267.4 = 0.94x |
+| `replace 1->3, 256 B, 3 matches` | 62.7 / 63.4 = 0.99x | 180.4 / 189.3 = 0.95x | 299.2 / 319.2 = 0.94x |
+| `replace 1->3, 256 B, 64 matches` | 916.4 / 597.2 = 1.53x | 1.68 / 1.25 us = 1.35x | 1.51 / 1.29 us = 1.17x |
+| `replace 1->3, 4 KB, 1024 matches` | 34.38 / 7.95 us = 4.33x | 38.10 / 13.94 us = 2.73x | 35.62 / 13.91 us = 2.56x |
+| `replace 1->1, 256 B, 64 matches` | 482.3 / 413.5 = 1.17x | 1.05 / 0.79 us = 1.34x | 876.8 / 798.9 = 1.10x |
+| `replace 3->1, 256 B, 64 matches` | 739.6 / 491.9 = 1.50x | 1.37 / 0.84 us = 1.63x | 1.12 / 0.93 us = 1.21x |
+| `replace 2->5, 256 B, 32 matches` | 464.8 / 304.3 = 1.53x | 1.03 / 0.76 us = 1.36x | 925.1 / 823.0 = 1.12x |
+| `inplace_replace 1->3, 256 B, 64 matches` | 799.2 / 556.2 = 1.44x | 1.27 / 1.01 us = 1.26x | 1.07 / 1.00 us = 1.07x |
+
+All 68 rows are in `bench/bench.cc`. Rows below 0.97 (best of three; the A/A of the same code
+compiled twice, where it is given, is in parentheses):
+
+- M4 Pro, 7 rows: `lower(string_view)` 1 B 0.96 (A/A 1.05), `upper(string_view)` 2 B 0.93 (0.96),
+  `join` of 2 and 4 strings 0.94 (0.99, 1.00), `replace` of 16 B with 2 matches 0.96 (1.00),
+  256 B with one match 0.97 (0.96) and with no match 0.97 (1.01).
+- i9, Apple clang, 10 rows: `upper(string_view)` 2 B 0.95 and 4 B 0.92, `join` of 2, 3, 4
+  strings 0.95, 0.97, 0.96, `replace` of 16 B with 2 matches 0.96, of 32 B with 4 matches 0.97,
+  of 256 B with 3 matches 0.95 and 2 matches 0.96, of 4 KB with one match 0.96 (A/A 0.97 to 1.04).
+- i9, g++ 16, 8 rows, all `replace`: 16 B with 2 matches 0.91, 32 B with 4 matches 0.88,
+  256 B with 1, 2, 3 matches 0.94, 0.88, 0.94, with no match 0.95, 4 KB with one match 0.88, and
+  3->1 with 2 matches 0.95.
+
+The `lower` / `upper` rows run the original's own loop (a default-constructed string and a
+`push_back` per byte) and the `join` rows its appends behind a test of the count and of the
+first element's size; they differ from it by 0.1 to 3 ns, and the same code compiled twice
+differs by up to 5% on them (`aa`). The `replace` rows differ in a way a literal search shows
+and a search known only at run time may not: the original's few lines are inlined into the call
+site, where the compiler can specialize on a literal one-byte search, and the new function is one
+out-of-line copy of eight paths. The inline-front experiment above moved the `g++ 16` rows with
+one match from 0.88 to 0.96, which points the same way. The rows left under 0.97 are those where
+the difference is that, or 0.5 to 2 ns. The M1 was unreachable and is not in this table; its
+column in the entry below is from before this pass.
+
 ## 2026-10-31, after the audit
 
 ### Fixed

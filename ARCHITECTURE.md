@@ -69,12 +69,15 @@ elements have no address, is filtered into a copy.
 ## Case helpers and replace
 
 `lower` and `upper` of a `string_view` write into an exactly sized result, reading
-the input once; up to seven bytes are pushed one by one into the short-string buffer.
+the input once; up to seven bytes are mapped in a stack buffer and copied into the
+short-string buffer once.
 `inplace_lower` and `inplace_upper` edit the string. All four map only the ASCII letters
 (`A-Z` and `a-z`); bytes outside them, including all bytes at or above 0x80, are
 unchanged, the same mapping as `chars::tolower` / `chars::toupper`. Below 8 bytes each
 byte goes through a 256-byte table, as the original did, because a vector loop has set-up
-that a few bytes do not repay. From 8 to 15 bytes the mapping works on two overlapping
+that a few bytes do not repay; the in-place loop is the original's, `std::transform` over
+the string's own iterators (written on a pointer the same loop gets a vector prologue and
+runs 2 to 25% slower at 4 to 6 bytes with Apple clang on x86-64). From 8 to 15 bytes the mapping works on two overlapping
 64-bit words (the overlap is idempotent); from 16 bytes on it is plain arithmetic
 (`c + 32` when `c - 'A' < 26`) in a loop the compiler vectorizes.
 
