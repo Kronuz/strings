@@ -129,7 +129,7 @@ them (68 rows).
   first when an in-place edit or a resize would affect it.
 
 Speed against the previous implementations (old / new = speedup), `strings_bench` built by CI
-with -O3 and run on each machine in an exclusive hold, best of three runs. Times are ns per call
+with -O3 and run on each machine while nothing else ran, best of three runs. Times are ns per call
 (microseconds where marked). The old column is `test/strings_old.hh`, the original code:
 
 | Row (ns per call) | M4 Pro | M1 Pro | i9 clang | i9 g++ 16 |
