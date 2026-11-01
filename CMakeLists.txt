@@ -89,6 +89,12 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
   target_link_libraries(strings_diff_test PRIVATE strings)
   add_test(NAME strings_diff COMMAND strings_diff_test)
 
+  # replace / join / lower paths against references, and the allocations of their results.
+  add_executable(strings_paths_test test/paths_test.cc)
+  target_include_directories(strings_paths_test PRIVATE test)
+  target_link_libraries(strings_paths_test PRIVATE strings)
+  add_test(NAME strings_paths COMMAND strings_paths_test)
+
   # indent / hasupper / empty-search replace against Python textwrap.indent and ASCII.
   add_executable(strings_fix_test test/fix_test.cc)
   target_link_libraries(strings_fix_test PRIVATE strings)

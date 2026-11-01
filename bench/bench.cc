@@ -1,11 +1,15 @@
 // strings benchmark: lower/upper, join and replace against the frozen Xapiand
 // implementations (test/strings_old.hh) and, when abseil is installed
-// (HAVE_ABSL), absl::AsciiStrToLower / StrJoin / StrReplaceAll. Build with
-// -DSTRINGS_BUILD_BENCH=ON. Best of 7 samples, ns per call.
+// (HAVE_ABSL), absl::AsciiStrToLower / AsciiStrToUpper / StrJoin / StrReplaceAll.
+// Build with -DSTRINGS_BUILD_BENCH=ON. Best of 7 samples, ns per call.
+// The rows cover every path of the optimized functions: tiny and large inputs,
+// one, two and many matches, and a replacement smaller, equal and larger than the search.
 #include <chrono>
 #include <cstdio>
+#include <initializer_list>
 #include <random>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include "strings.hh"
@@ -38,15 +42,53 @@ static double best_ns(F&& f) {
 static volatile size_t sink;
 
 static void row(const char* name, double o, double n, double a) {
-	std::printf("%-30s %10.1f %10.1f %7.2f %10.1f\n", name, o, n, o / n, a);
+	std::printf("%-38s %10.1f %10.1f %7.2f %10.1f\n", name, o, n, o / n, a);
+}
+
+// n random printable bytes.
+static std::string printable(std::mt19937& rng, size_t n) {
+	std::string s(n, 'a');
+	for (auto& c : s) { c = static_cast<char>(0x20 + rng() % 95); }
+	return s;
+}
+
+// n bytes of 'a' with '_' every `every` bytes.
+static std::string dense(size_t n, size_t every) {
+	std::string s(n, 'a');
+	for (size_t i = 0; i < n; i += every) { s[i] = '_'; }
+	return s;
+}
+
+// n bytes of 'a' with '_' at the given offsets.
+static std::string with_matches(size_t n, std::initializer_list<size_t> at) {
+	std::string s(n, 'a');
+	for (size_t i : at) { s[i] = '_'; }
+	return s;
+}
+
+// `text` repeated `times` times.
+static std::string repeated(std::string_view text, size_t times) {
+	std::string s;
+	for (size_t i = 0; i < times; ++i) { s += text; }
+	return s;
+}
+
+// One replace row: copy the text and replace, as replace(string_view) does.
+static void replace_row(const char* name, const std::string& text, std::string_view search, std::string_view repl) {
+	std::string_view sv = text;
+	double a = 0;
+#ifdef HAVE_ABSL
+	a = best_ns([&] { sink = absl::StrReplaceAll(sv, {{search, repl}}).size(); });
+#endif
+	row(name, best_ns([&] { sink = old_strings::replace(sv, search, repl).size(); }), best_ns([&] { sink = strings::replace(sv, search, repl).size(); }), a);
 }
 
 int main() {
 	std::mt19937 rng(3);
-	std::printf("%-30s %10s %10s %7s %10s\n", "workload (ns/call)", "old", "new", "x", "absl");
-	for (size_t n : {16, 256, 4096}) {
-		std::string s(n, 'a');
-		for (auto& c : s) { c = static_cast<char>(0x20 + rng() % 95); }
+	std::printf("%-38s %10s %10s %7s %10s\n", "workload (ns/call)", "old", "new", "x", "absl");
+
+	for (size_t n : {1, 2, 4, 8, 16, 32, 256, 4096}) {
+		std::string s = printable(rng, n);
 		std::string_view sv = s;
 		double a = 0;
 		char name[64];
@@ -55,14 +97,25 @@ int main() {
 		a = best_ns([&] { sink = absl::AsciiStrToLower(sv).size(); });
 #endif
 		row(name, best_ns([&] { sink = old_strings::lower(sv).size(); }), best_ns([&] { sink = strings::lower(sv).size(); }), a);
+		std::snprintf(name, sizeof name, "upper(string_view) %zu B", n);
+#ifdef HAVE_ABSL
+		a = best_ns([&] { sink = absl::AsciiStrToUpper(sv).size(); });
+#endif
+		row(name, best_ns([&] { sink = old_strings::upper(sv).size(); }), best_ns([&] { sink = strings::upper(sv).size(); }), a);
 		std::snprintf(name, sizeof name, "inplace_lower %zu B", n);
 		std::string t = s;
 #ifdef HAVE_ABSL
 		a = best_ns([&] { absl::AsciiStrToLower(&t); sink = t.size(); });
 #endif
 		row(name, best_ns([&] { old_strings::inplace_lower(t); sink = t.size(); }), best_ns([&] { strings::inplace_lower(t); sink = t.size(); }), a);
+		std::snprintf(name, sizeof name, "inplace_upper %zu B", n);
+#ifdef HAVE_ABSL
+		a = best_ns([&] { absl::AsciiStrToUpper(&t); sink = t.size(); });
+#endif
+		row(name, best_ns([&] { old_strings::inplace_upper(t); sink = t.size(); }), best_ns([&] { strings::inplace_upper(t); sink = t.size(); }), a);
 	}
-	for (size_t n : {10, 1000}) {
+
+	for (size_t n : {1, 2, 3, 4, 10, 1000}) {
 		std::vector<std::string> vs;
 		std::vector<int> vi;
 		for (size_t i = 0; i < n; ++i) { vs.push_back("item" + std::to_string(rng() % 1000)); vi.push_back(static_cast<int>(rng() % 100000)); }
@@ -78,18 +131,51 @@ int main() {
 		a = best_ns([&] { sink = absl::StrJoin(vi, ", ").size(); });
 #endif
 		row(name, best_ns([&] { sink = old_strings::join(vi, ", ").size(); }), best_ns([&] { sink = strings::join(vi, ", ").size(); }), a);
+		if (n >= 10) {
+			auto even = [](const std::string& s) { return s.size() % 2 == 0; };
+			std::snprintf(name, sizeof name, "join(vector<string>, pred) %zu", n);
+			row(name, best_ns([&] { sink = old_strings::join(vs, ", ", ", ", even).size(); }), best_ns([&] { sink = strings::join(vs, ", ", ", ", even).size(); }), 0);
+		}
 	}
-	for (size_t n : {256, 4096}) {
-		std::string s(n, 'a');
-		for (size_t i = 0; i < n; i += 4) { s[i] = '_'; }
-		std::string_view sv = s;
+	for (size_t n : {1, 2, 3}) {
+		std::vector<std::string> vs;
+		for (size_t i = 0; i < n; ++i) { vs.push_back(std::string(60 + i, 'x')); }
 		char name[64];
 		double a = 0;
-		std::snprintf(name, sizeof name, "replace 1->3 chars, %zu B", n);
+		std::snprintf(name, sizeof name, "join(vector<string>) %zu x 60 B", n);
 #ifdef HAVE_ABSL
-		a = best_ns([&] { sink = absl::StrReplaceAll(sv, {{"_", "-=-"}}).size(); });
+		a = best_ns([&] { sink = absl::StrJoin(vs, ", ").size(); });
 #endif
-		row(name, best_ns([&] { sink = old_strings::replace(sv, "_", "-=-").size(); }), best_ns([&] { sink = strings::replace(sv, "_", "-=-").size(); }), a);
+		row(name, best_ns([&] { sink = old_strings::join(vs, ", ").size(); }), best_ns([&] { sink = strings::join(vs, ", ").size(); }), a);
+	}
+
+	// replace(string_view): the result is a fresh string, so every row includes one copy of the text.
+	replace_row("replace 1->3, 16 B, 2 matches", dense(16, 8), "_", "-=-");
+	replace_row("replace 1->3, 32 B, 4 matches", dense(32, 8), "_", "-=-");
+	replace_row("replace 1->3, 256 B, 64 matches", dense(256, 4), "_", "-=-");
+	replace_row("replace 1->3, 256 B, 16 matches", dense(256, 16), "_", "-=-");
+	replace_row("replace 1->3, 256 B, 3 matches", with_matches(256, {10, 100, 200}), "_", "-=-");
+	replace_row("replace 1->3, 256 B, 2 matches", with_matches(256, {10, 200}), "_", "-=-");
+	replace_row("replace 1->3, 256 B, 1 match", with_matches(256, {100}), "_", "-=-");
+	replace_row("replace 1->3, 256 B, no match", std::string(256, 'a'), "_", "-=-");
+	replace_row("replace 1->3, 4 KB, 1024 matches", dense(4096, 4), "_", "-=-");
+	replace_row("replace 1->3, 4 KB, 1 match", with_matches(4096, {2000}), "_", "-=-");
+	replace_row("replace 1->1, 256 B, 16 matches", dense(256, 16), "_", "-");
+	replace_row("replace 1->1, 256 B, 64 matches", dense(256, 4), "_", "-");
+	replace_row("replace 3->1, 256 B, 64 matches", repeated("ab_a", 64), "b_a", "-");
+	replace_row("replace 3->1, 256 B, 2 matches", std::string(256, 'a').replace(10, 3, "b_a").replace(200, 3, "b_a"), "b_a", "-");
+	replace_row("replace 3->1, 4 KB, 1024 matches", repeated("ab_a", 1024), "b_a", "-");
+	replace_row("replace 3->0, 256 B, 64 matches", repeated("ab_a", 64), "b_a", "");
+	replace_row("replace 2->5, 256 B, 32 matches", repeated("xyzabxyz", 32), "ab", "12345");
+
+	// inplace_replace on a string the caller owns: the copy below only refills it.
+	{
+		const std::string grow = dense(256, 4), shrink = repeated("ab_a", 64);
+		std::string t;
+		row("inplace_replace 1->3, 256 B, 64 matches", best_ns([&] { t = grow; old_strings::inplace_replace(t, "_", "-=-"); sink = t.size(); }),
+			best_ns([&] { t = grow; strings::inplace_replace(t, "_", "-=-"); sink = t.size(); }), 0);
+		row("inplace_replace 3->1, 256 B, 64 matches", best_ns([&] { t = shrink; old_strings::inplace_replace(t, "b_a", "-"); sink = t.size(); }),
+			best_ns([&] { t = shrink; strings::inplace_replace(t, "b_a", "-"); sink = t.size(); }), 0);
 	}
 	return 0;
 }

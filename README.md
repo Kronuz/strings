@@ -63,18 +63,26 @@ int main() {
 
 ## ⚡ Performance
 
-`lower`/`upper` map ASCII letters with arithmetic over a copy, which the compiler
-vectorizes. `join` reserves its result and writes integers with `std::to_chars`.
-`replace` builds its result in one pass when it has several matches of a
-different size.
+`lower`/`upper` of a few bytes use a table lookup per byte, from 8 to 15 bytes two
+overlapping 64-bit words, and from 16 bytes plain arithmetic that the compiler
+vectorizes. `join` reserves its result and writes integers with `std::to_chars`; up to
+four short strings are appended without the sizing pass. `replace` finds the matches
+first and then edits in place, or builds the result in one buffer of the exact size
+when it grows by many matches with no room.
 
-On Apple silicon (Apple clang 17, -O3):
+Apple M4 Pro (Apple clang 17, -O3), `strings_bench`, ns per call:
 
-| Operation | strings | abseil |
-| --- | --- | --- |
-| `lower(string_view)`, 16 B / 256 B / 4 KB | 6.7 ns / 26 ns / 119 ns | `AsciiStrToLower` 4 KB: 1.2 us |
-| `join(vector<int>)`, 1000 elements | 8.5 us | `StrJoin`: 9.2 us |
-| `replace`, several matches in 4 KB | 11.2 us | `StrReplaceAll`: 13.3 us |
+| Operation | strings | original | abseil |
+| --- | --- | --- | --- |
+| `lower(string_view)`, 8 B / 16 B / 4 KB | 3.3 / 4.5 ns / 114 ns | 8.8 / 20 ns / 7.9 us | `AsciiStrToLower` 4 KB: 1.2 us |
+| `join(vector<string>)`, 10 / 1000 elements | 60 ns / 4.8 us | 78 ns / 5.0 us | |
+| `join(vector<int>)`, 1000 elements | 8.6 us | 13.3 us | `StrJoin`: 9.2 us |
+| `replace`, 1 byte by 3, 256 B with 64 matches | 608 ns | 925 ns | |
+| `replace`, several matches in 4 KB | 7.9 us | 34.9 us | `StrReplaceAll`: 13.3 us |
+
+The abseil figures come from the benchmark built with abseil installed (`HAVE_ABSL`) on Apple
+silicon. The same rows on an Intel i9-9980HK (Apple clang 17): `lower` 8 B 11 ns, 4 KB 262 ns;
+`join(vector<int>)` 1000 19.3 us; `replace` 256 B with 64 matches 1.3 us, 4 KB 14.6 us.
 
 Run the benchmark with:
 

@@ -12,8 +12,9 @@ strings.hh                   Inline/template utilities: format, join, split, ind
 strings.cc                   The compiled humanizers: from_bytes / from_time / from_small_time / from_delta, on a Humanize helper. Includes "colors.h". Same as Xapiand's.
 test/fix_test.cc             indent / hasupper / empty-search replace against Python textwrap.indent and ASCII oracles.
 test/diff_test.cc            Differential test of join / lower / upper / replace against test/strings_old.hh.
+test/paths_test.cc           lower / upper against the per-byte definition, replace against a naive Python-rule reference (exhaustive small domain, 0 to 300 matches, piece sizes, aliasing), what replace does to the buffer, join paths. The path test fails on the pre-fix header.
 test/strings_old.hh          Frozen Xapiand join / upper / lower / replace, the differential test's oracle. Do not edit.
-bench/bench.cc               Benchmark (STRINGS_BUILD_BENCH=ON) against strings_old.hh and, when installed, abseil.
+bench/bench.cc               Benchmark (STRINGS_BUILD_BENCH=ON) against strings_old.hh and, when installed, abseil: tiny to 4 KB case mapping, join of 1 to 1000 elements, replace with 0 to 1024 matches in every size relation.
 test/test.cc                 Runnable smoke test: format (incl. silent fallback), join, split, indent, padding, predicates, case, replace, trim, humanizers.
 CMakeLists.txt               STATIC library `strings` (+ alias strings::strings); FetchContent of five sibling deps; CTest test `strings`.
 LICENSE                      MIT, Copyright (c) 2015-2019 Dubalu LLC.
@@ -101,6 +102,10 @@ a bad format string is the same raw text. There are no `L_*` / `log.h` / `opts`
   a `std::vector<std::string_view>`; they work because `ansi_color` converts
   implicitly to `std::string_view`. Don't change those vectors to hold a concrete
   color type.
+- **`inplace_replace` edits with `memcpy` and `memmove`.** A search or replacement
+  that views into the string would change under the edit, so it is copied first
+  (`detail::overlaps`). Keep that check when changing the in-place paths;
+  `test/paths_test.cc` pins it.
 
 ## How to extend
 
