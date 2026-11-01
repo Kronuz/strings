@@ -3,11 +3,13 @@
 // (HAVE_ABSL), absl::AsciiStrToLower / AsciiStrToUpper / StrJoin / StrReplaceAll.
 // Build with -DSTRINGS_BUILD_BENCH=ON. Best of 7 samples, ns per call. With abseil, every row first
 // checks that strings and abseil return the same string for that input; a difference exits 1.
+// `strings_bench --check` runs those checks without timing (CTest `strings_bench_check`).
 // The rows cover every path of the optimized functions: tiny and large inputs,
 // one, two and many matches, and a replacement smaller, equal and larger than the search.
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstring>
 #include <initializer_list>
 #include <random>
 #include <string>
@@ -22,8 +24,11 @@
 #include "absl/strings/str_replace.h"
 #endif
 
+static bool g_check = false;
+
 template <typename F>
 static double best_ns(F&& f) {
+	if (g_check) { return 1; }
 	using clk = std::chrono::steady_clock;
 	double best = 1e18;
 	for (int s = 0; s < 7; ++s) {
@@ -63,6 +68,7 @@ static void ab(const char* name, O&& old_fn, N&& new_fn, O2&& old2_fn, double a)
 	const double o = best_ns(old_fn);
 	const double n = best_ns(new_fn);
 	const double o2 = best_ns(old2_fn);
+	if (g_check) { return; }
 	std::printf("%-38s %10.1f %10.1f %10.1f %7.2f %7.2f %10.1f\n", name, o, o2, n, std::min(o, o2) / n, o / o2, a);
 }
 #define AB(name, old_fn, new_fn, a) ab(name, old_fn, new_fn, old_fn, a)
@@ -106,9 +112,10 @@ static void replace_row(const char* name, const std::string& text, std::string_v
 	AB(name, [&] { sink = old_strings::replace(sv, search, repl).size(); }, [&] { sink = strings::replace(sv, search, repl).size(); }, a);
 }
 
-int main() {
+int main(int argc, char** argv) {
+	g_check = argc > 1 && std::strcmp(argv[1], "--check") == 0;
 	std::mt19937 rng(3);
-	std::printf("%-38s %10s %10s %10s %7s %7s %10s\n", "workload (ns/call)", "old", "old2", "new", "x", "aa", "absl");
+	if (!g_check) { std::printf("%-38s %10s %10s %10s %7s %7s %10s\n", "workload (ns/call)", "old", "old2", "new", "x", "aa", "absl"); }
 
 	for (size_t n : {1, 2, 4, 8, 16, 32, 256, 4096}) {
 		std::string s = printable(rng, n);

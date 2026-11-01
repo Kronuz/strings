@@ -112,5 +112,7 @@ if(CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
       target_compile_definitions(strings_bench PRIVATE HAVE_ABSL=1)
       target_link_libraries(strings_bench PRIVATE absl::strings absl::str_format)
     endif()
+    # Results only, no timing: with abseil, strings must return what abseil returns on every row's input.
+    add_test(NAME strings_bench_check COMMAND strings_bench --check)
   endif()
 endif()
