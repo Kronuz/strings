@@ -89,20 +89,28 @@ Not for:
 
 ## ⚡ Performance
 
-ns per call (µs where marked), `strings_bench` built with `-O3`, best of three
-runs. Apple M4 Pro with Apple clang 17; Intel Core i9-9980HK with Apple clang 17
-and with g++ 16.
+Time per call, in ns (µs where marked), from `bench/bench.cc`: the best of seven samples of at least
+8 ms. *strings* is this library; *abseil* is the call a program would make without it, from [abseil
+20260817.0](https://github.com/abseil/abseil-cpp/tree/20260817.0): `absl::AsciiStrToLower` for
+`lower`, `absl::StrJoin(v, ", ")` for `join(v, ", ")`, and `absl::StrReplaceAll` with one search and
+replacement pair for `replace`. Before it times a row, the bench checks that both return the same
+string for that input, and it exits 1 when they differ. `lower` runs over random printable ASCII;
+`join` over strings like `item417` or random integers below 100,000; `replace` over `a` bytes with
+`_` at every 4th or 16th byte, replacing `_` by `-=-` (*64 matches* is every 4th byte of 256 B). The
+ratio is strings' time over abseil's, so below 1 is faster. Apple clang 17, `-O3`, on an Apple M4
+Pro (macOS 26).
 
-| Operation | Apple M4 Pro | i9-9980HK, clang | i9-9980HK, g++ 16 |
-| --- | --- | --- | --- |
-| `lower(string_view)`, 8 B | 3.3 | 9.9 | 19.6 |
-| `lower(string_view)`, 16 B | 4.4 | 11.4 | 53.6 |
-| `lower(string_view)`, 4 KB | 120 | 240 | 280 |
-| `join(vector<string>)`, 10 elements | 57.1 | 127.3 | 121.5 |
-| `join(vector<string>)`, 1000 elements | 4.76 µs | 8.87 µs | 8.69 µs |
-| `join(vector<int>)`, 1000 elements | 8.53 µs | 18.28 µs | 18.04 µs |
-| `replace` 1 byte by 3, 256 B, 64 matches | 597 | 1.25 µs | 1.29 µs |
-| `replace` 1 byte by 3, 4 KB, 1024 matches | 7.95 µs | 13.94 µs | 13.91 µs |
+| Operation | Apple M4 Pro: strings | abseil | ratio |
+| --- | ---: | ---: | ---: |
+| `lower`, 8 B | 3.3 ns | 4.9 ns | 0.67 |
+| `lower`, 16 B | 4.6 ns | 7.8 ns | 0.59 |
+| `lower`, 4 KB | 128 ns | 1.35 µs | 0.10 |
+| `join` of 10 strings | 60.8 ns | 48.2 ns | 1.26 |
+| `join` of 1000 strings | 4.93 µs | 3.75 µs | 1.31 |
+| `join` of 1000 `int`s | 8.34 µs | 8.97 µs | 0.93 |
+| `replace` 1 byte by 3, 256 B, no match | 28.4 ns | 51.3 ns | 0.55 |
+| `replace` 1 byte by 3, 256 B, 64 matches | 600 ns | 788 ns | 0.76 |
+| `replace` 1 byte by 3, 4 KB, 1024 matches | 7.93 µs | 11.6 µs | 0.69 |
 
 ```sh
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DSTRINGS_BUILD_BENCH=ON
@@ -110,9 +118,7 @@ cmake --build build --target strings_bench
 ./build/strings_bench
 ```
 
-The benchmark adds an abseil column (`AsciiStrToLower`, `StrJoin`,
-`StrReplaceAll`) when abseil is installed. [CHANGELOG.md](CHANGELOG.md) records
-the rows against the Xapiand original on each machine.
+The bench uses abseil when CMake finds it. [docs/perf/README.md](docs/perf/README.md) has every row.
 
 ## 📚 Documentation
 
