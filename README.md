@@ -98,19 +98,19 @@ string for that input, and it exits 1 when they differ. `lower` runs over random
 `join` over strings like `item417` or random integers below 100,000; `replace` over `a` bytes with
 `_` at every 4th or 16th byte, replacing `_` by `-=-` (*64 matches* is every 4th byte of 256 B). The
 ratio is strings' time over abseil's, so below 1 is faster. Apple clang 17, `-O3`, on an Apple M4
-Pro (macOS 26).
+Pro (macOS 26) and an Intel Core i9-9980HK (macOS 15).
 
-| Operation | Apple M4 Pro: strings | abseil | ratio |
-| --- | ---: | ---: | ---: |
-| `lower`, 8 B | 3.3 ns | 4.9 ns | 0.67 |
-| `lower`, 16 B | 4.6 ns | 7.8 ns | 0.59 |
-| `lower`, 4 KB | 128 ns | 1.35 µs | 0.10 |
-| `join` of 10 strings | 60.8 ns | 48.2 ns | 1.26 |
-| `join` of 1000 strings | 4.93 µs | 3.75 µs | 1.31 |
-| `join` of 1000 `int`s | 8.34 µs | 8.97 µs | 0.93 |
-| `replace` 1 byte by 3, 256 B, no match | 28.4 ns | 51.3 ns | 0.55 |
-| `replace` 1 byte by 3, 256 B, 64 matches | 600 ns | 788 ns | 0.76 |
-| `replace` 1 byte by 3, 4 KB, 1024 matches | 7.93 µs | 11.6 µs | 0.69 |
+| Operation | Apple M4 Pro: strings | abseil | ratio | Intel Core i9-9980HK: strings | abseil | ratio |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| `lower`, 8 B | 3.3 ns | 4.9 ns | 0.67 | 10.8 ns | 13.7 ns | 0.79 |
+| `lower`, 16 B | 4.6 ns | 7.8 ns | 0.59 | 11.7 ns | 18.0 ns | 0.65 |
+| `lower`, 4 KB | 128 ns | 1.35 µs | 0.10 | 264 ns | 2.78 µs | 0.09 |
+| `join` of 10 strings | 60.8 ns | 48.2 ns | 1.26 | 130 ns | 98.7 ns | 1.31 |
+| `join` of 1000 strings | 4.93 µs | 3.75 µs | 1.31 | 9.17 µs | 6.57 µs | 1.39 |
+| `join` of 1000 `int`s | 8.34 µs | 8.97 µs | 0.93 | 19.0 µs | 18.5 µs | 1.03 |
+| `replace` 1 byte by 3, 256 B, no match | 28.4 ns | 51.3 ns | 0.55 | 113 ns | 190 ns | 0.59 |
+| `replace` 1 byte by 3, 256 B, 64 matches | 600 ns | 788 ns | 0.76 | 1.28 µs | 1.95 µs | 0.66 |
+| `replace` 1 byte by 3, 4 KB, 1024 matches | 7.93 µs | 11.6 µs | 0.69 | 14.6 µs | 24.3 µs | 0.60 |
 
 ```sh
 cmake -B build -DCMAKE_BUILD_TYPE=Release -DSTRINGS_BUILD_BENCH=ON
