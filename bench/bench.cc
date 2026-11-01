@@ -1,7 +1,8 @@
 // strings benchmark: lower/upper, join and replace against the frozen Xapiand
 // implementations (test/strings_old.hh) and, when abseil is installed
 // (HAVE_ABSL), absl::AsciiStrToLower / AsciiStrToUpper / StrJoin / StrReplaceAll.
-// Build with -DSTRINGS_BUILD_BENCH=ON. Best of 7 samples, ns per call.
+// Build with -DSTRINGS_BUILD_BENCH=ON. Best of 7 samples, ns per call. With abseil, every row first
+// checks that strings and abseil return the same string for that input; a difference exits 1.
 // The rows cover every path of the optimized functions: tiny and large inputs,
 // one, two and many matches, and a replacement smaller, equal and larger than the search.
 #include <algorithm>
@@ -41,6 +42,18 @@ static double best_ns(F&& f) {
 }
 
 static volatile size_t sink;
+static int mismatches = 0;
+#ifdef HAVE_ABSL
+#define SAME(what, ours, theirs) \
+	do { \
+		if (std::string(ours) != std::string(theirs)) { \
+			std::printf("DIFFERENT from abseil: %s\n", what); \
+			++mismatches; \
+		} \
+	} while (0)
+#else
+#define SAME(what, ours, theirs) do { } while (0)
+#endif
 
 // One A/B row. The original runs twice, before and after the new code, as two copies of the same lambda
 // (AB pastes the old code twice): each copy is compiled and laid out on its own, so `aa` = old / old2 is the
@@ -86,6 +99,7 @@ static std::string repeated(std::string_view text, size_t times) {
 static void replace_row(const char* name, const std::string& text, std::string_view search, std::string_view repl) {
 	std::string_view sv = text;
 	double a = 0;
+	SAME(name, strings::replace(sv, search, repl), absl::StrReplaceAll(sv, {{search, repl}}));
 #ifdef HAVE_ABSL
 	a = best_ns([&] { sink = absl::StrReplaceAll(sv, {{search, repl}}).size(); });
 #endif
@@ -102,11 +116,13 @@ int main() {
 		double a = 0;
 		char name[64];
 		std::snprintf(name, sizeof name, "lower(string_view) %zu B", n);
+		SAME(name, strings::lower(sv), absl::AsciiStrToLower(sv));
 #ifdef HAVE_ABSL
 		a = best_ns([&] { sink = absl::AsciiStrToLower(sv).size(); });
 #endif
 		AB(name, [&] { sink = old_strings::lower(sv).size(); }, [&] { sink = strings::lower(sv).size(); }, a);
 		std::snprintf(name, sizeof name, "upper(string_view) %zu B", n);
+		SAME(name, strings::upper(sv), absl::AsciiStrToUpper(sv));
 #ifdef HAVE_ABSL
 		a = best_ns([&] { sink = absl::AsciiStrToUpper(sv).size(); });
 #endif
@@ -131,11 +147,13 @@ int main() {
 		char name[64];
 		double a = 0;
 		std::snprintf(name, sizeof name, "join(vector<string>) %zu", n);
+		SAME(name, strings::join(vs, ", "), absl::StrJoin(vs, ", "));
 #ifdef HAVE_ABSL
 		a = best_ns([&] { sink = absl::StrJoin(vs, ", ").size(); });
 #endif
 		AB(name, [&] { sink = old_strings::join(vs, ", ").size(); }, [&] { sink = strings::join(vs, ", ").size(); }, a);
 		std::snprintf(name, sizeof name, "join(vector<int>) %zu", n);
+		SAME(name, strings::join(vi, ", "), absl::StrJoin(vi, ", "));
 #ifdef HAVE_ABSL
 		a = best_ns([&] { sink = absl::StrJoin(vi, ", ").size(); });
 #endif
@@ -152,6 +170,7 @@ int main() {
 		char name[64];
 		double a = 0;
 		std::snprintf(name, sizeof name, "join(vector<string>) %zu x 60 B", n);
+		SAME(name, strings::join(vs, ", "), absl::StrJoin(vs, ", "));
 #ifdef HAVE_ABSL
 		a = best_ns([&] { sink = absl::StrJoin(vs, ", ").size(); });
 #endif
@@ -186,5 +205,6 @@ int main() {
 		AB("inplace_replace 3->1, 256 B, 64 matches", [&] { t = shrink; old_strings::inplace_replace(t, "b_a", "-"); sink = t.size(); },
 			[&] { t = shrink; strings::inplace_replace(t, "b_a", "-"); sink = t.size(); }, 0);
 	}
-	return 0;
+	if (mismatches != 0) { std::printf("%d rows differ from abseil\n", mismatches); }
+	return mismatches != 0 ? 1 : 0;
 }
