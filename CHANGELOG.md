@@ -3,6 +3,74 @@
 Notable changes to `strings`, newest first. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## 2026-11-01, the original's code where it was the cheapest
+
+### Fixed
+
+The final gate (START `62fb121`, 2026-11-01) still had `join` of two to four strings at 0.88 to 0.93 and
+`replace` with a few matches at 0.94 to 0.98 on the M4 Pro and the i9, after two passes that reshaped the
+new code. This pass runs the original's code, copied and not re-derived, wherever it was the cheapest,
+and keeps the new code for what is larger.
+
+- **`join` of strings**: one or two strings, or three or four with a first string shorter than 16 bytes,
+  run `detail::join_original`, which is `join` of `test/strings_old.hh` line for line (one append per
+  piece, no sizing pass). Anything longer is sized first, as before, and a `vector<std::string_view>`
+  appends views, as before. The dispatch reads the vector's size in bytes: the element count is a
+  multiplication by the inverse of 24, and with it the dispatch cost 6 to 9% of a two-string join.
+- **`replace` / `inplace_replace`**: a string of up to 32 bytes runs the original's loop, one `replace`
+  per match. A longer one finds its first matches before it edits anything and replaces one to three
+  of them at their offset plus the growth so far, the original's calls without a search between them.
+  A fourth match, an empty search, a replacement as long as the search and a view into the string go
+  to the out-of-line `detail::replace_general`, which receives the matches already found. It used to
+  search for them again: `replace` of 256 B with four matches, a row the bench did not have, was 0.92 to
+  0.95 of START on both machines.
+- Three structures were measured and dropped, each 0.60 to 0.80 of START on every `join` row of both
+  machines, rows that never reach the moved code included: the sized path in its own non-inlined function,
+  the original's body forced inline, and the whole `join` of strings as one non-inlined function.
+
+### Added
+
+- Six bench rows at the points where the paths hand over (4 and 8 matches, 3 matches shrinking, one
+  match of the same size, 33 B and 64 B strings): 74 rows.
+- `tools/mutants.py` breaks `strings.hh` in 33 single-line ways; all 33 die.
+
+Speed against START (START / new = speedup; below 1 is slower), `strings_bench` built with -O3, four
+rounds of START, new, START in one strict hold per machine, median of the paired ratios with the
+range over rounds in parentheses. The frozen original compiled into the same binary (`old` in the
+bench) moves by a few percent between two binaries of the same code, so a row within that of
+1.00 is the layout, not the code:
+
+| Row | M4 Pro | i9 |
+| --- | --- | --- |
+| `join(vector<string>) 1` | 0.96 (0.96-1.00) | 1.04 (1.00-1.05) |
+| `join(vector<string>) 2` | 0.98 (0.97-1.00) | 1.00 (0.95-1.03) |
+| `join(vector<string>) 3` | 0.96 (0.92-0.99) | 0.98 (0.97-1.01) |
+| `join(vector<string>) 4` | 0.95 (0.93-0.96) | 0.98 (0.84-1.00) |
+| `join(vector<string>) 10` | 1.28 (1.25-1.33) | 1.24 (1.08-1.37) |
+| `join(vector<string>) 1000` | 1.03 (1.00-1.05) | 1.03 (0.96-1.05) |
+| `join(vector<string>) 2 x 60 B` | 1.00 (0.98-1.03) | 0.96 (0.95-1.00) |
+| `join(vector<string>) 3 x 60 B` | 1.83 (1.79-1.85) | 2.24 (2.21-2.39) |
+| `replace 1->3, 16 B, 2 matches` | 0.98 (0.95-1.02) | 0.95 (0.92-1.01) |
+| `replace 1->3, 32 B, 4 matches` | 1.00 (0.96-1.02) | 0.99 (0.97-1.03) |
+| `replace 1->3, 256 B, no match` | 1.00 (0.98-1.01) | 1.03 (0.85-1.07) |
+| `replace 1->3, 256 B, 1 match` | 0.97 (0.96-1.01) | 1.09 (1.05-1.20) |
+| `replace 1->3, 256 B, 2 matches` | 1.00 (0.99-1.04) | 0.94 (0.76-1.08) |
+| `replace 1->3, 256 B, 3 matches` | 1.00 (0.98-1.02) | 1.06 (1.04-1.10) |
+| `replace 1->3, 256 B, 4 matches` | 1.03 (0.99-1.06) | 0.95 (0.90-1.02) |
+| `replace 1->3, 256 B, 8 matches` | 1.05 (1.04-1.07) | 1.02 (0.97-1.10) |
+| `replace 1->3, 256 B, 64 matches` | 1.63 (1.62-1.66) | 1.46 (1.37-1.53) |
+| `replace 1->3, 4 KB, 1 match` | 1.00 (1.00-1.03) | 0.96 (0.94-1.00) |
+| `replace 1->3, 4 KB, 1024 matches` | 4.54 (4.53-4.62) | 3.07 (2.99-3.37) |
+| `replace 3->1, 256 B, 3 matches` | 1.00 (0.98-1.05) | 0.96 (0.92-1.00) |
+
+Rows still under 0.97 (median of the paired ratios): on the M4, `join` of 1, 3 and 4 strings (0.96,
+0.96, 0.95; the ranges reach 0.99 to 1.00, and the frozen original in the same binary is at 1.04 on the
+first) and `lower(string_view)` of 1 B (0.96, code this pass does not touch); on the i9, `replace` of
+16 B with 2 matches, of 256 B with 2 and 4 matches and 3->1 with 3 matches, of 4 KB with 1 match
+(0.94 to 0.96, ranges to 1.00 and above; the A/A of the 2-match row is 0.94), and `join` of 2 x 60 B
+(0.96, no longer a gain: it runs the original's code). Every other row of the 74 is at or above 0.97 on
+both machines.
+
 ## 2026-11-01, small inputs again
 
 ### Fixed

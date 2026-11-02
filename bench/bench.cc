@@ -202,6 +202,14 @@ int main(int argc, char** argv) {
 	replace_row("replace 3->1, 4 KB, 1024 matches", repeated("ab_a", 1024), "b_a", "-");
 	replace_row("replace 3->0, 256 B, 64 matches", repeated("ab_a", 64), "b_a", "");
 	replace_row("replace 2->5, 256 B, 32 matches", repeated("xyzabxyz", 32), "ab", "12345");
+	// Around the point where the few-match path hands over to the general one (three matches), and the
+	// size relations and string sizes the rows above leave out.
+	replace_row("replace 1->3, 256 B, 4 matches", with_matches(256, {10, 80, 150, 200}), "_", "-=-");
+	replace_row("replace 1->3, 256 B, 8 matches", dense(256, 32), "_", "-=-");
+	replace_row("replace 3->1, 256 B, 3 matches", std::string(256, 'a').replace(10, 3, "b_a").replace(100, 3, "b_a").replace(200, 3, "b_a"), "b_a", "-");
+	replace_row("replace 1->1, 256 B, 1 match", with_matches(256, {100}), "_", "-");
+	replace_row("replace 1->3, 64 B, 3 matches", with_matches(64, {5, 30, 60}), "_", "-=-");
+	replace_row("replace 1->3, 33 B, 2 matches", with_matches(33, {5, 30}), "_", "-=-");
 
 	// inplace_replace on a string the caller owns: the copy below only refills it.
 	{

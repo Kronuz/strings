@@ -322,17 +322,18 @@ static std::string ref_join(const std::vector<std::string>& v, const std::string
 }
 
 static void test_join_paths() {
-	const std::size_t sizes[] = {0, 1, 5, 22, 23, 40, 100};
+	// 15 and 16 are either side of the first-string size (16) that picks the original's append.
+	const std::size_t sizes[] = {0, 1, 5, 15, 16, 22, 23, 40, 100};
 	const char* delimiters[] = {"", ",", ", ", " and "};
 	std::mt19937_64 rng(5);
 	for (std::size_t n = 0; n <= 6; ++n) {
 		for (const char* d : delimiters) {
 			for (const char* ld : delimiters) {
-				for (int rep = 0; rep < 20; ++rep) {
+				for (int rep = 0; rep < 30; ++rep) {
 					std::vector<std::string> v;
 					std::vector<std::string_view> views;
 					for (std::size_t i = 0; i < n; ++i) {
-						std::string s(sizes[rng() % 7], '\0');
+						std::string s(sizes[rng() % 9], '\0');
 						for (auto& c : s) { c = static_cast<char>('a' + rng() % 26); }
 						v.push_back(s);
 					}

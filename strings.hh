@@ -30,6 +30,7 @@
 #include <cstdint>            // for std::uint32_t, std::uint64_t
 #include <cstring>            // for std::memcpy, std::memmove
 #include <functional>         // for std::less
+#include <memory>             // for std::to_address
 #include <ostream>            // for std::ostream
 #include <string>             // for std::string
 #include <string_view>        // for std::string_view
@@ -205,37 +206,66 @@ inline std::string join_impl(std::size_t count, Get&& get, std::string_view deli
 }
 
 
-// A single string, or up to four with the first shorter than 16 bytes: the result is small or one
+// A single string_view, or up to four with the first shorter than 16 bytes: the result is small or one
 // copy, so sizing it before the appends costs more than the growth it can save.
 template <typename T>
 inline bool join_is_short(const std::vector<T>& values) {
 	return values.size() <= 1 || (values.size() <= 4 && std::string_view(values[0]).size() < 16);
 }
 
-// The short path appends a std::string as a std::string: through a string_view the same append compiled
-// 3 to 11% slower with Apple clang on x86-64 at two to four short elements.
+// The original join of strings, verbatim (test/strings_old.hh): one append per piece and no sizing pass.
+// Joins of one or two strings, and of three or four with a first string shorter than 16 bytes, run it, so
+// that they are the code the original compiled to, literal delimiter included; the sized path is for the
+// joins where the growth of the result is the cost.
 template <typename T>
-inline void join_append_short(std::string& result, const T& value) {
-	if constexpr (std::is_same_v<T, std::string>) {
-		result.append(value);
-	} else {
-		join_append<T>(result, value);
+inline std::string join_original(const std::vector<T>& values, std::string_view delimiter, std::string_view last_delimiter)
+{
+	auto it = values.begin();
+	auto it_e = values.end();
+
+	auto rit = values.rbegin();
+	auto rit_e = values.rend();
+	if (rit != rit_e) ++rit;
+	auto it_l = rit != rit_e ? rit.base() : it_e;
+
+	std::string result;
+
+	if (it != it_e) {
+		result.append(std::to_string(*it++));
 	}
+	for (; it != it_l; ++it) {
+		result.append(delimiter.data(), delimiter.size());
+		result.append(std::to_string(*it));
+	}
+	if (it != it_e) {
+		result.append(last_delimiter.data(), last_delimiter.size());
+		result.append(std::to_string(*it));
+	}
+
+	return result;
 }
 
+// The same for string_views, appended as views: the original's to_string would copy each into a temporary.
 template <typename T>
 inline std::string join_short(const std::vector<T>& values, std::string_view delimiter, std::string_view last_delimiter) {
 	std::string result;
 	const auto count = values.size();
 	if (count != 0) {
-		join_append_short<T>(result, values[0]);
+		join_append<T>(result, values[0]);
 		for (std::size_t i = 1; i < count; ++i) {
 			const auto& between = (i + 1 == count) ? last_delimiter : delimiter;
 			result.append(between.data(), between.size());
-			join_append_short<T>(result, values[i]);
+			join_append<T>(result, values[i]);
 		}
 	}
 	return result;
+}
+
+// The size of a vector in bytes: a subtraction, where the element count divides by the element size.
+template <typename T>
+inline std::size_t vector_bytes(const std::vector<T>& values) noexcept {
+	return static_cast<std::size_t>(reinterpret_cast<const char*>(std::to_address(values.end())) -
+		reinterpret_cast<const char*>(std::to_address(values.begin())));
 }
 
 }  // namespace detail
@@ -244,7 +274,14 @@ inline std::string join_short(const std::vector<T>& values, std::string_view del
 template <typename T>
 inline std::string join(const std::vector<T>& values, std::string_view delimiter, std::string_view last_delimiter)
 {
-	if constexpr (detail::join_is_string_like<T>) {
+	if constexpr (std::is_same_v<T, std::string>) {
+		// One or two strings, or three or four with the first shorter than 16 bytes: the original's code, behind
+		// a test of the vector's size in bytes (and, for three and four, of the first string's).
+		const auto bytes = detail::vector_bytes(values);
+		if (bytes - 1 < 2 * sizeof(std::string) || (bytes - 1 < 4 * sizeof(std::string) && values[0].size() < 16)) {
+			return detail::join_original(values, delimiter, last_delimiter);
+		}
+	} else if constexpr (std::is_same_v<T, std::string_view>) {
 		if (detail::join_is_short(values)) {
 			return detail::join_short(values, delimiter, last_delimiter);
 		}
@@ -659,8 +696,17 @@ inline constexpr std::size_t replace_known_matches = 16;
 // A string of at most this many bytes is edited with one replace call per match.
 inline constexpr std::size_t replace_small_size = 32;
 
-inline void
-inplace_replace(std::string& str, std::string_view search, std::string_view replacement)
+namespace detail {
+
+// True when the search or the replacement may view into the buffer of `str`: an edit would change what it says.
+inline bool replace_aliased(const std::string& str, std::string_view search, std::string_view replacement) noexcept {
+	return overlaps(str, search) || overlaps(str, replacement);
+}
+
+// The paths of inplace_replace that are not one to three matches. `found[0..n)` (1 <= n <= 4) are the first
+// n matches of `search` in str, which has not been edited. An empty search ignores them.
+STRINGS_NEVER_INLINE inline void
+replace_general(std::string& str, std::string_view search, std::string_view replacement, const std::size_t* found, std::size_t n)
 {
 	const auto search_size = search.size();
 	const auto replacement_size = replacement.size();
@@ -679,20 +725,17 @@ inplace_replace(std::string& str, std::string_view search, std::string_view repl
 		}
 		return;
 	}
-	auto pos = str.find(search);
-	if (pos == std::string::npos) {
-		return;
-	}
 	// An edit in place changes what a search or replacement viewing into str says, and a resize
 	// can move it: such an edit copies the view first (the copy also does not alias).
 	const auto aliased = [&](bool search_too) {
 		return detail::overlaps(str, replacement) || (search_too && detail::overlaps(str, search));
 	};
+	auto pos = found[0];
 	const auto size = str.size();
 	if (search_size == replacement_size) {
 		if (aliased(true)) {
 			const std::string search_copy(search), replacement_copy(replacement);
-			inplace_replace(str, search_copy, replacement_copy);
+			replace_general(str, search_copy, replacement_copy, found, n);
 			return;
 		}
 		do {
@@ -701,22 +744,23 @@ inplace_replace(std::string& str, std::string_view search, std::string_view repl
 		} while (pos != std::string::npos);
 		return;
 	}
+	// The k-th match moves by what the k edits before it changed (modulo 2^64, so a shrink works too).
+	const auto growth = replacement_size - search_size;
 	if (size <= replace_small_size) {
 		// A short string: each replace moves a few bytes, so plain replace calls are the cheapest.
 		if (aliased(true)) {
 			const std::string search_copy(search), replacement_copy(replacement);
-			inplace_replace(str, search_copy, replacement_copy);
+			replace_general(str, search_copy, replacement_copy, found, n);
 			return;
 		}
-		do {
+		for (std::size_t k = 0; k < n; ++k) {
+			str.replace(found[k] + k * growth, search_size, replacement);
+		}
+		pos = str.find(search, found[n - 1] + (n - 1) * growth + replacement_size);
+		while (pos != std::string::npos) {
 			str.replace(pos, search_size, replacement);
 			pos = str.find(search, pos + replacement_size);
-		} while (pos != std::string::npos);
-		return;
-	}
-	auto next = str.find(search, pos + search_size);
-	if (next == std::string::npos) {
-		str.replace(pos, search_size, replacement);
+		}
 		return;
 	}
 	if (replacement_size < search_size) {
@@ -724,12 +768,14 @@ inplace_replace(std::string& str, std::string_view search, std::string_view repl
 		// read cursor, and the next match is found before its gap is moved.
 		if (aliased(true)) {
 			const std::string search_copy(search), replacement_copy(replacement);
-			inplace_replace(str, search_copy, replacement_copy);
+			replace_general(str, search_copy, replacement_copy, found, n);
 			return;
 		}
 		char* data = str.data();
 		std::size_t write = pos;
 		std::size_t last;
+		std::size_t k = 0;
+		auto next = n > 1 ? found[1] : str.find(search, pos + search_size);
 		for (;;) {
 			write = detail::put(data + write, replacement) - data;
 			last = pos + search_size;
@@ -737,7 +783,8 @@ inplace_replace(std::string& str, std::string_view search, std::string_view repl
 			if (pos == std::string::npos) {
 				break;
 			}
-			next = str.find(search, pos + search_size);
+			++k;
+			next = k + 1 < n ? found[k + 1] : str.find(search, pos + search_size);
 			write = detail::shift(data + write, data + last, pos - last) - data;
 		}
 		write = detail::shift(data + write, data + last, size - last) - data;
@@ -746,10 +793,11 @@ inplace_replace(std::string& str, std::string_view search, std::string_view repl
 	}
 	// Growing: record the matches first (all searching happens before any edit).
 	std::size_t known[replace_known_matches];
-	std::size_t known_count = 2;
-	known[0] = pos;
-	known[1] = next;
-	next = str.find(search, next + search_size);
+	std::size_t known_count = n;
+	for (std::size_t k = 0; k < n; ++k) {
+		known[k] = found[k];
+	}
+	auto next = str.find(search, known[known_count - 1] + search_size);
 	while (next != std::string::npos && known_count < replace_known_matches) {
 		known[known_count++] = next;
 		next = str.find(search, next + search_size);
@@ -766,14 +814,13 @@ inplace_replace(std::string& str, std::string_view search, std::string_view repl
 	}
 	const auto count = known_count + rest.size();
 	const auto match = [&](std::size_t k) { return k < known_count ? known[k] : rest[k - known_count]; };
-	const auto growth = replacement_size - search_size;
 	if (count <= replace_known_matches || str.capacity() >= size + count * growth) {
 		// Few matches, or room already: edit in place. Two or three matches are as cheap as
 		// replace calls (each match is at its offset plus the growth so far); more move each
 		// tail once, last match first, so that no match moves the matches before it.
 		if (aliased(false)) {
 			const std::string replacement_copy(replacement);
-			inplace_replace(str, search, replacement_copy);
+			replace_general(str, search, replacement_copy, found, n);
 			return;
 		}
 		if (count <= 3) {
@@ -808,6 +855,57 @@ inplace_replace(std::string& str, std::string_view search, std::string_view repl
 	str = std::move(out);
 }
 
+}  // namespace detail
+
+
+// One to three matches are the original's calls (test/strings_old.hh), inlined in the caller. A string of at
+// most 32 bytes runs the original's loop; a longer one finds its first matches before it edits anything,
+// since there it matters whether there are more than three, and replaces each at its offset plus the growth
+// so far, which is what the loop does one search at a time. More matches, an empty search, a replacement as
+// long as the search and a view into the string go to the out-of-line paths, with the matches found so far.
+inline void
+inplace_replace(std::string& str, std::string_view search, std::string_view replacement)
+{
+	auto pos = str.find(search);
+	if (pos == std::string::npos) {
+		return;
+	}
+	const auto search_size = search.size();
+	const auto replacement_size = replacement.size();
+	if (search_size == 0 || search_size == replacement_size || detail::replace_aliased(str, search, replacement)) {
+		detail::replace_general(str, search, replacement, &pos, 1);
+		return;
+	}
+	if (str.size() <= replace_small_size) {
+		do {
+			str.replace(pos, search_size, replacement);
+			pos = str.find(search, pos + replacement_size);
+		} while (pos != std::string::npos);
+		return;
+	}
+	const auto second = str.find(search, pos + search_size);
+	if (second == std::string::npos) {
+		str.replace(pos, search_size, replacement);
+		return;
+	}
+	// The k-th match moves by what the k edits before it changed (modulo 2^64, so a shrink works too).
+	const auto growth = replacement_size - search_size;
+	const auto third = str.find(search, second + search_size);
+	if (third == std::string::npos) {
+		str.replace(pos, search_size, replacement);
+		str.replace(second + growth, search_size, replacement);
+		return;
+	}
+	const auto fourth = str.find(search, third + search_size);
+	if (fourth == std::string::npos) {
+		str.replace(pos, search_size, replacement);
+		str.replace(second + growth, search_size, replacement);
+		str.replace(third + 2 * growth, search_size, replacement);
+		return;
+	}
+	const std::size_t found[4] = {pos, second, third, fourth};
+	detail::replace_general(str, search, replacement, found, 4);
+}
 
 inline std::string
 replace(std::string&& str, std::string_view search, std::string_view replacement)

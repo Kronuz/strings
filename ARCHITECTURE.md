@@ -57,9 +57,11 @@ distinct `last_delimiter` before the final element when one is given (so a list
 reads "a, b and c"; a one-element list has no separator). It indexes the vector, so
 the last separator is chosen by position. The result is built with as few
 allocations as possible: for `std::string` / `std::string_view` elements the total
-size is summed first and reserved; a single string, or up to four strings
-with a first element shorter than 16 bytes, skip that pass, because the result is small
-and sizing it costs more than the growth it could save; integer elements (not `bool` or the wide
+size is summed first and reserved; except that one or two `std::string`s, or three or
+four with a first element shorter than 16 bytes, run the original's code verbatim (one append
+per piece, `join_original`), because the result is small and sizing it costs more than the
+growth it could save, and the code is what the original compiled to; the same joins of
+`std::string_view`s append views; integer elements (not `bool` or the wide
 character types) are written with `std::to_chars` rather than through a temporary
 `std::to_string` string; any other element goes through `std::to_string`.
 The predicate overload drops the elements for which the predicate is true by
@@ -81,18 +83,25 @@ runs 2 to 25% slower at 4 to 6 bytes with Apple clang on x86-64). From 8 to 15 b
 64-bit words (the overlap is idempotent); from 16 bytes on it is plain arithmetic
 (`c + 32` when `c - 'A' < 26`) in a loop the compiler vectorizes.
 
-`inplace_replace` picks its path from the match count and the size relation:
+`inplace_replace` picks its path from the match count and the size relation. The caller
+inlines the cases where the original's code is already the cheapest:
 
-- Same size: overwrite each match.  Pieces of up to 16 bytes are copied with two
-  overlapping word moves instead of a library call.
-- One match, or a string of at most 32 bytes: `std::string::replace` per match.
-- Shorter replacement: close the gaps in one forward pass; the write cursor never
-  passes the read cursor and the next match is found before its gap moves.
-- Longer replacement: record the match offsets first (an array of 16 on the stack,
-  then a vector). With two or three matches, call `replace` for each at its offset plus the growth so far.
-  With up to 16 matches, or when the string already has room, resize once and move
-  each tail up by the growth so far, last match first, so every byte moves at most
-  once. With more matches and no room, build the result in one buffer of the exact size.
+- A string of at most 32 bytes: the original's loop, `std::string::replace` per match.
+- Up to three matches in a longer string: found first, then `replace` for each at its offset
+  plus the growth so far (one search per match, as the original did, with no edit before the
+  count is known).
+
+The rest is `detail::replace_general`, out of line, which receives the first four matches the
+caller found:
+
+- Same size: overwrite each match. Pieces of up to 16 bytes are copied with two overlapping
+  word moves instead of a library call.
+- Shorter replacement: close the gaps in one forward pass; the write cursor never passes the
+  read cursor and the next match is found before its gap moves.
+- Longer replacement: record the match offsets first (an array of 16 on the stack, then a
+  vector). With up to 16 matches, or when the string already has room, resize once and move
+  each tail up by the growth so far, last match first, so every byte moves at most once. With
+  more matches and no room, build the result in one buffer of the exact size.
 
 A search or replacement that views into the string is copied first when an edit in
 place would change it or a resize would move it. An empty
