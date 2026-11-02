@@ -16,27 +16,27 @@ include(FetchContent)
 FetchContent_Declare(
   char_classify
   GIT_REPOSITORY https://github.com/Kronuz/char-classify.git
-  GIT_TAG        65c1ff5c4052d9108ea7630bc4327be236ec1bd8
+  GIT_TAG        57613ed349bb4fa273806b78341a53f676089505
 )
 FetchContent_Declare(
   split
   GIT_REPOSITORY https://github.com/Kronuz/split.git
-  GIT_TAG        4b3010cb7b01958c045d9a738a5087887215e099
+  GIT_TAG        40af1a2089df42a3a622e6c3cd539b1e0f0da73f
 )
 FetchContent_Declare(
   static_string
   GIT_REPOSITORY https://github.com/Kronuz/static-string.git
-  GIT_TAG        cfa812749aab849258fbed076316cd7701cdf948
+  GIT_TAG        46561fad9f26f9b2b613568fe1a3dbcb016d4aba
 )
 FetchContent_Declare(
   repr
   GIT_REPOSITORY https://github.com/Kronuz/repr.git
-  GIT_TAG        12ea8805c41484795712b53bd7303e49021aaf0b
+  GIT_TAG        87450b43c6ff113a321e06d811d9b7a4857c9351
 )
 FetchContent_Declare(
   term_color
   GIT_REPOSITORY https://github.com/Kronuz/term-color.git
-  GIT_TAG        e4533011479d8e2671a13c42eacd23d738d8228b
+  GIT_TAG        94df6e5e1cadebbba45cd1f5fbb679407550be56
 )
 FetchContent_MakeAvailable(char_classify split static_string repr term_color)
 
