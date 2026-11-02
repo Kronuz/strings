@@ -31,7 +31,7 @@ FetchContent_Declare(
 FetchContent_Declare(
   repr
   GIT_REPOSITORY https://github.com/Kronuz/repr.git
-  GIT_TAG        9acb04d12ecbed440ad02e967e45da1ee11c145c
+  GIT_TAG        12ea8805c41484795712b53bd7303e49021aaf0b
 )
 FetchContent_Declare(
   term_color
