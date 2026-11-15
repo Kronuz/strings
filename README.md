@@ -122,6 +122,8 @@ The bench uses abseil when CMake finds it. [docs/perf/README.md](docs/perf/READM
 
 ## 📚 Documentation
 
+- [The Bag of Holding](https://kronuz.github.io/blog/bag-of-holding/):
+  the Familiars post that covers `strings` among the small helpers.
 - [docs/API.md](docs/API.md): every helper, with examples.
 - [ARCHITECTURE.md](ARCHITECTURE.md): the header and compiled split, the
   dependencies, and how the humanizers pick units.
